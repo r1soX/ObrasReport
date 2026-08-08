@@ -350,12 +350,27 @@ namespace ObrasReport
 
             if (ready.Count == 1)
             {
-                // одна категория — сохранение с выбором имени/папки
                 var g = ready[0];
                 try
                 {
                     var model = ReportEngine.Build(g.Select(i => i.Snapshot).ToList());
-                    model.Description = desc; model.CategoryLabel = g.Key;
+                    model.Description = desc;
+                    model.CategoryLabel = g.Key;
+
+                    var charts = RenderObrCharts(model, out string chartWarn);
+                    string periods = string.Join(", ", model.Snapshots.Select(s => s.Label));
+                    string subtitle = $"Категория: {g.Key}. Периоды: {periods}." +
+                                     (string.IsNullOrWhiteSpace(desc) ? "" : " Описание: " + desc);
+
+                    var preview = new ChartPreviewWindow(
+                        subtitle, charts, chartWarn,
+                        heading: "Графики и диаграммы — " + g.Key)
+                    { Owner = this };
+                    if (preview.ShowDialog() != true || !preview.SaveConfirmed)
+                    {
+                        Log.Text = "Сохранение отчёта отменено.";
+                        return;
+                    }
 
                     var dlg = new SaveFileDialog
                     {
@@ -366,18 +381,18 @@ namespace ObrasReport
                     };
                     if (dlg.ShowDialog() != true) return;
 
-                    ExcelReportWriter.Write(model, dlg.FileName);
+                    ExcelReportWriter.Write(model, dlg.FileName, charts);
                     created.Add(Tuple.Create(g.Key, dlg.FileName, model));
                 }
                 catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
             }
             else
             {
-                // несколько категорий — выбираем папку и сохраняем в неё все отчёты
+                // несколько категорий — отдельный отчёт (и свои графики) на каждую
                 string targetDir;
                 using (var fbd = new System.Windows.Forms.FolderBrowserDialog())
                 {
-                    fbd.Description = "Выберите папку для сохранения отчётов";
+                    fbd.Description = "Выберите папку для сохранения отчётов (по одному на категорию)";
                     fbd.SelectedPath = Path.GetDirectoryName(ready[0].First().Snapshot.FilePath);
                     if (fbd.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
                     targetDir = fbd.SelectedPath;
@@ -388,9 +403,27 @@ namespace ObrasReport
                     try
                     {
                         var model = ReportEngine.Build(g.Select(i => i.Snapshot).ToList());
-                        model.Description = desc; model.CategoryLabel = g.Key;
+                        model.Description = desc;
+                        model.CategoryLabel = g.Key;
+
+                        var charts = RenderObrCharts(model, out string chartWarn);
+                        string periods = string.Join(", ", model.Snapshots.Select(s => s.Label));
+                        string subtitle = $"Категория: {g.Key}. Периоды: {periods}." +
+                                         (string.IsNullOrWhiteSpace(desc) ? "" : " Описание: " + desc);
+
+                        var preview = new ChartPreviewWindow(
+                            subtitle, charts, chartWarn,
+                            heading: "Графики и диаграммы — " + g.Key,
+                            saveButtonText: "Сохранить эту категорию…")
+                        { Owner = this };
+                        if (preview.ShowDialog() != true || !preview.SaveConfirmed)
+                        {
+                            errors.Add($"{g.Key}: сохранение пропущено пользователем");
+                            continue;
+                        }
+
                         string path = Path.Combine(targetDir, SuggestName(model));
-                        ExcelReportWriter.Write(model, path);
+                        ExcelReportWriter.Write(model, path, charts);
                         created.Add(Tuple.Create(g.Key, path, model));
                     }
                     catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
@@ -497,6 +530,23 @@ namespace ObrasReport
             }
         }
 
+        private static List<ChartImage> RenderObrCharts(ReportModel model, out string warning)
+        {
+            warning = null;
+            try
+            {
+                var charts = ReportChartRenderer.RenderAll(model);
+                if (charts == null || charts.Count == 0)
+                    warning = "Графики и диаграммы не удалось построить. Таблицы будут сохранены без визуализаций.";
+                return charts ?? new List<ChartImage>();
+            }
+            catch (Exception ex)
+            {
+                warning = "Ошибка построения графиков/диаграмм: " + ex.Message;
+                return new List<ChartImage>();
+            }
+        }
+
         private static string SuggestUniversalName(UniversalReportModel m)
         {
             string dates = string.Join("-", m.DateLabels);
@@ -546,7 +596,12 @@ namespace ObrasReport
                                 " Таблицы можно сохранить без визуализаций.";
                 }
 
-                var preview = new ChartPreviewWindow(model, charts, chartWarn) { Owner = this };
+                string periods = string.Join(", ", model.DateLabels);
+                string subtitle = $"Периоды: {periods}." +
+                                  (string.IsNullOrWhiteSpace(model.Description) ? "" : " Описание: " + model.Description);
+                var preview = new ChartPreviewWindow(subtitle, charts, chartWarn,
+                    heading: "Графики и диаграммы динамики")
+                { Owner = this };
                 if (preview.ShowDialog() != true || !preview.SaveConfirmed)
                 {
                     Log.Text = "Сохранение отчёта динамики отменено.";

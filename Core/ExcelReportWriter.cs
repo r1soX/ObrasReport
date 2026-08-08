@@ -16,12 +16,22 @@ namespace ObrasReport.Core
         private static readonly XLColor GreenText = XLColor.FromHtml("#375623");
         private static readonly XLColor AmberText = XLColor.FromHtml("#7F6000");
 
-        public static void Write(ReportModel model, string outputPath)
+        public static void Write(ReportModel model, string outputPath, IList<ChartImage> charts = null)
         {
             using (var wb = new XLWorkbook())
             {
                 WriteTable(wb, model);
                 WriteStats(wb, model);
+                string cat = string.IsNullOrWhiteSpace(model.CategoryLabel)
+                    ? (model.Layout == LayoutType.Repairs ? "По ремонту" : "Не по ремонту")
+                    : model.CategoryLabel;
+                string periods = "Категория: " + cat + ". Периоды: " +
+                                 string.Join(", ", model.Snapshots.Select(s => s.Label));
+                ChartSheetHelper.Write(wb,
+                    "Графики и диаграммы — " + cat,
+                    periods,
+                    charts,
+                    "ObrChart_");
                 wb.SaveAs(outputPath);
             }
         }

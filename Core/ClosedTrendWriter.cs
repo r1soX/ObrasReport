@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using ClosedXML.Excel;
 using ObrasReport.Models;
@@ -30,52 +29,10 @@ namespace ObrasReport.Core
 
         private static void WriteCharts(XLWorkbook wb, TrendReportModel model, IList<ChartImage> charts)
         {
-            var ws = wb.AddWorksheet("Графики");
-            ws.Cell(1, 1).Value = string.IsNullOrWhiteSpace(model.Title)
+            string heading = string.IsNullOrWhiteSpace(model.Title)
                 ? "Графики и диаграммы прогресса закрытия"
                 : "Графики и диаграммы: " + model.Title;
-            ws.Cell(1, 1).Style.Font.Bold = true;
-            ws.Cell(1, 1).Style.Font.FontSize = 13;
-            ws.Cell(1, 1).Style.Font.FontColor = TitleColor;
-
-            ws.Cell(2, 1).Value = "Периоды: " + string.Join(", ", model.DateLabels);
-            ws.Cell(2, 1).Style.Font.Italic = true;
-            ws.Cell(2, 1).Style.Font.FontSize = 9;
-            ws.Cell(2, 1).Style.Font.FontColor = XLColor.FromHtml("#595959");
-
-            if (charts == null || charts.Count == 0)
-            {
-                ws.Cell(4, 1).Value = "Графики и диаграммы не сформированы.";
-                ws.Cell(4, 1).Style.Font.FontColor = XLColor.FromHtml("#C62828");
-                ws.Column(1).Width = 70;
-                return;
-            }
-
-            // Вставляем PNG друг под другом. ClosedXML привязывает картинку к ячейке.
-            int anchorRow = 4;
-            const int chartHeightRows = 28; // выше картинки после увеличения холста
-            int picIndex = 0;
-            foreach (var chart in charts)
-            {
-                if (chart?.Png == null || chart.Png.Length == 0) continue;
-                ws.Cell(anchorRow, 1).Value = chart.Title ?? ("График " + (picIndex + 1));
-                ws.Cell(anchorRow, 1).Style.Font.Bold = true;
-                ws.Cell(anchorRow, 1).Style.Font.FontSize = 11;
-                ws.Cell(anchorRow, 1).Style.Font.FontColor = TitleColor;
-
-                using (var ms = new MemoryStream(chart.Png))
-                {
-                    var pic = ws.AddPicture(ms)
-                        .MoveTo(ws.Cell(anchorRow + 1, 1))
-                        .WithSize(900, 480);
-                    pic.Name = "TrendChart_" + picIndex;
-                }
-
-                anchorRow += chartHeightRows;
-                picIndex++;
-            }
-
-            ws.Column(1).Width = 90;
+            ChartSheetHelper.Write(wb, heading, "Периоды: " + string.Join(", ", model.DateLabels), charts, "TrendChart_");
         }
 
         private static void WriteTable(XLWorkbook wb, TrendReportModel model)

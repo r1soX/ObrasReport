@@ -4,7 +4,6 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using ObrasReport.Core;
-using ObrasReport.Models;
 
 namespace ObrasReport
 {
@@ -12,17 +11,22 @@ namespace ObrasReport
     {
         public bool SaveConfirmed { get; private set; }
 
-        public ChartPreviewWindow(TrendReportModel model, List<ChartImage> charts, string warning = null)
+        /// <param name="subtitle">Строка под заголовком (категория, периоды, описание).</param>
+        public ChartPreviewWindow(string subtitle, List<ChartImage> charts, string warning = null,
+            string heading = null, string saveButtonText = null)
         {
             InitializeComponent();
 
-            string periods = model?.DateLabels != null && model.DateLabels.Count > 0
-                ? string.Join(", ", model.DateLabels)
-                : "—";
-            string desc = string.IsNullOrWhiteSpace(model?.Description)
-                ? ""
-                : " Описание: " + model.Description.Trim();
-            SubtitleText.Text = $"Периоды: {periods}.{desc}";
+            if (!string.IsNullOrWhiteSpace(heading))
+            {
+                Title = heading;
+                HeadingText.Text = heading;
+            }
+
+            SubtitleText.Text = string.IsNullOrWhiteSpace(subtitle) ? "" : subtitle;
+
+            if (!string.IsNullOrWhiteSpace(saveButtonText))
+                SaveButton.Content = saveButtonText;
 
             if (!string.IsNullOrWhiteSpace(warning))
             {
