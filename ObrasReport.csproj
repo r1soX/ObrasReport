@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>ReportIA</AssemblyName>
+    <RootNamespace>ReportIA</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Product>Отчёт по обработке обращений</Product>
+    <Version>1.0.0</Version>
+    <Company>Автотрейд</Company>
+    <Copyright>Смолин Владислав Сергеевич</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
+    <PackageReference Include="Costura.Fody" Version="5.7.0" PrivateAssets="all" />
+    <PackageReference Include="Fody" Version="6.8.1" PrivateAssets="all" />
+    <PackageReference Include="ScottPlot" Version="4.1.74" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+</Project>
