@@ -14,20 +14,16 @@ namespace ObrasReport.Core
         public byte[] Png;
     }
 
-    /// <summary>Рендер диаграмм динамики закрытых обращений/нарядов (ScottPlot → PNG).</summary>
+    /// <summary>Рендер графиков и диаграмм динамики закрытых обращений/нарядов (ScottPlot → PNG).</summary>
     public static class TrendChartRenderer
     {
         private static readonly Color BrandBlue = ColorTranslator.FromHtml("#1F4E78");
         private static readonly Color Green = ColorTranslator.FromHtml("#2E7D32");
         private static readonly Color Accent = ColorTranslator.FromHtml("#5B8DB8");
 
-        private const int Width = 900;
-        private const int Height = 420;
+        private const int Width = 980;
+        private const int Height = 520;
 
-        /// <summary>
-        /// Строит набор графиков. При ошибке отдельного графика пропускает его;
-        /// при полной неудаче возвращает пустой список (не бросает наружу).
-        /// </summary>
         public static List<ChartImage> RenderAll(TrendReportModel model)
         {
             var list = new List<ChartImage>();
@@ -38,6 +34,8 @@ namespace ObrasReport.Core
             TryAdd(list, () => LineTotals(model, obr: false));
             TryAdd(list, () => GroupedTotals(model));
             TryAdd(list, () => TopResponsibles(model));
+            TryAdd(list, () => PieShareResponsibles(model));
+            TryAdd(list, () => PieObrVsNar(model));
             return list;
         }
 
@@ -49,10 +47,7 @@ namespace ObrasReport.Core
                 if (img?.Png != null && img.Png.Length > 0)
                     list.Add(img);
             }
-            catch
-            {
-                /* best-effort: один сломанный график не роняет весь набор */
-            }
+            catch { /* best-effort */ }
         }
 
         private static ChartImage LineTotals(TrendReportModel model, bool obr)
@@ -65,17 +60,23 @@ namespace ObrasReport.Core
 
             double[] xs = Enumerable.Range(0, values.Count).Select(i => (double)i).ToArray();
             double[] ys = values.Select(v => (double)v).ToArray();
+            double yMax = ys.Length == 0 ? 1 : Math.Max(ys.Max(), 1);
+            double topPad = Math.Max(yMax * 0.22, 2);
 
             var plt = NewPlot(title);
-            var scatter = plt.AddScatter(xs, ys, color: color, lineWidth: 2.5f, markerSize: 8);
-            scatter.Smooth = false;
+            plt.AddScatter(xs, ys, color: color, lineWidth: 2.5f, markerSize: 9);
 
+            // подписи чуть выше точек, чтобы не пересекались с линией и заголовком
             for (int i = 0; i < ys.Length; i++)
-                plt.AddText(ys[i].ToString("0"), xs[i], ys[i], size: 11, color: color);
+            {
+                var t = plt.AddText(ys[i].ToString("0"), xs[i], ys[i] + topPad * 0.35, size: 11, color: color);
+                t.Alignment = Alignment.LowerCenter;
+            }
 
             plt.XTicks(xs, model.DateLabels.ToArray());
             plt.YLabel(obr ? "Закрыто обращений" : "Закрыто нарядов");
-            plt.SetAxisLimits(yMin: 0);
+            plt.SetAxisLimits(xMin: -0.35, xMax: xs.Length - 0.65, yMin: 0, yMax: yMax + topPad);
+            ApplyCartesianLayout(plt);
 
             return ToImage(title, plt);
         }
@@ -85,88 +86,210 @@ namespace ObrasReport.Core
             const string title = "Обращения и наряды по периодам";
             double[] obr = model.TotalObrClosed.Select(v => (double)v).ToArray();
             double[] nar = model.TotalNarClosed.Select(v => (double)v).ToArray();
+            double yMax = Math.Max(obr.DefaultIfEmpty(0).Max(), nar.DefaultIfEmpty(0).Max());
+            yMax = Math.Max(yMax, 1);
 
             var plt = NewPlot(title);
             string[] seriesLabels = { "Обращения", "Наряды" };
             double[][] series = { obr, nar };
             var bars = plt.AddBarGroups(model.DateLabels.ToArray(), seriesLabels, series, null);
-            if (bars != null && bars.Length >= 2)
+            if (bars != null)
             {
-                bars[0].FillColor = BrandBlue;
-                bars[1].FillColor = Green;
+                if (bars.Length >= 1) bars[0].FillColor = BrandBlue;
+                if (bars.Length >= 2) bars[1].FillColor = Green;
                 foreach (var b in bars)
                 {
                     b.BorderColor = Color.Transparent;
                     b.ShowValuesAboveBars = true;
+                    b.Font.Size = 10;
                 }
             }
-            plt.Legend(location: Alignment.UpperRight);
+
+            plt.Legend(location: Alignment.UpperLeft);
             plt.YLabel("Закрыто");
-            plt.SetAxisLimits(yMin: 0);
+            // запас сверху под цифры над столбцами + легенду
+            plt.SetAxisLimits(yMin: 0, yMax: yMax * 1.35);
+            ApplyCartesianLayout(plt, right: 30, top: 70);
 
             return ToImage(title, plt);
         }
 
         private static ChartImage TopResponsibles(TrendReportModel model)
         {
-            const string title = "Топ‑10 ответственных (закрытые обращения, последний период)";
+            const string title = "Топ‑10 ответственных (закрытые обращения)";
             int last = model.DateLabels.Count - 1;
             string lastLabel = model.DateLabels[last];
 
             var top = model.Rows
                 .Select(r => new
                 {
-                    Name = Truncate(r.Responsible, 28),
+                    Name = Truncate(r.Responsible, 24),
                     Closed = r.ObrClosed.Count > last ? r.ObrClosed[last] : 0,
                     Delta = r.ObrDelta
                 })
                 .OrderByDescending(x => x.Closed)
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .Take(10)
-                .Reverse() // снизу вверх для горизонтальных баров
+                .Reverse()
                 .ToList();
 
             if (top.Count == 0)
-            {
-                var empty = NewPlot(title + " — нет данных");
-                return ToImage(title, empty);
-            }
+                return ToImage(title, NewPlot(title + " — нет данных"));
 
             double[] values = top.Select(t => (double)t.Closed).ToArray();
             double[] positions = Enumerable.Range(0, top.Count).Select(i => (double)i).ToArray();
-            string[] labels = top.Select(t =>
-            {
-                string d = t.Delta > 0 ? $"+{t.Delta}" : t.Delta.ToString();
-                return $"{t.Name} ({d})";
-            }).ToArray();
+            // короткие подписи оси — дельта только в подписи значения
+            string[] labels = top.Select(t => t.Name).ToArray();
+            double xMax = Math.Max(values.DefaultIfEmpty(0).Max(), 1);
 
-            var plt = NewPlot($"{title}\nПериод: {lastLabel}");
+            var plt = NewPlot(title);
+            plt.XLabel("Период: " + lastLabel + "   ·   Закрыто обращений");
+
             var bar = plt.AddBar(values, positions);
             bar.Orientation = Orientation.Horizontal;
             bar.FillColor = Accent;
             bar.BorderColor = BrandBlue;
-            bar.ShowValuesAboveBars = true;
+            bar.ShowValuesAboveBars = false;
+
+            for (int i = 0; i < values.Length; i++)
+            {
+                string d = top[i].Delta > 0 ? $"+{top[i].Delta}" : top[i].Delta.ToString();
+                string caption = $"{values[i]:0} ({d})";
+                var t = plt.AddText(caption, values[i] + xMax * 0.02, positions[i], size: 10, color: BrandBlue);
+                t.Alignment = Alignment.MiddleLeft;
+            }
 
             plt.YTicks(positions, labels);
-            plt.XLabel("Закрыто обращений");
-            plt.SetAxisLimits(xMin: 0);
-            plt.YAxis.Layout(padding: 10, minimumSize: 180);
+            plt.SetAxisLimits(xMin: 0, xMax: xMax * 1.28, yMin: -0.7, yMax: top.Count - 0.3);
+            ApplyCartesianLayout(plt, left: 220, right: 40, bottom: 55, top: 55);
+            plt.YAxis.TickLabelStyle(rotation: 0);
 
             return ToImage(title, plt);
         }
 
+        private static ChartImage PieShareResponsibles(TrendReportModel model)
+        {
+            int last = model.DateLabels.Count - 1;
+            string lastLabel = model.DateLabels[last];
+            const string title = "Диаграмма: доля закрытых обращений";
+
+            var ranked = model.Rows
+                .Select(r => new { Name = Truncate(r.Responsible, 26), Closed = r.ObrClosed.Count > last ? r.ObrClosed[last] : 0 })
+                .Where(x => x.Closed > 0)
+                .OrderByDescending(x => x.Closed)
+                .ToList();
+
+            if (ranked.Count == 0)
+                return ToImage(title, NewPlot(title + " — нет данных"));
+
+            const int topN = 8;
+            var top = ranked.Take(topN).ToList();
+            int other = ranked.Skip(topN).Sum(x => x.Closed);
+            var valuesList = top.Select(t => (double)t.Closed).ToList();
+            var namesList = top.Select(t => t.Name).ToList();
+            if (other > 0)
+            {
+                valuesList.Add(other);
+                namesList.Add("Прочие");
+            }
+
+            double total = valuesList.Sum();
+            double[] values = valuesList.ToArray();
+            // подписи только в легенде — не на секторах (иначе наезжают друг на друга)
+            string[] legend = namesList
+                .Select((n, i) => $"{n} — {values[i]:0} ({Pct(values[i], total)})")
+                .ToArray();
+
+            var plt = NewPiePlot(title, "Период: " + lastLabel);
+            var pie = plt.AddPie(values);
+            pie.ShowLabels = false;
+            pie.ShowPercentages = false;
+            pie.ShowValues = false;
+            pie.Size = 0.55;
+            pie.LegendLabels = legend;
+            plt.Legend(true, Alignment.MiddleRight);
+            ApplyPieLayout(plt);
+
+            return ToImage(title, plt);
+        }
+
+        private static ChartImage PieObrVsNar(TrendReportModel model)
+        {
+            int last = model.DateLabels.Count - 1;
+            string lastLabel = model.DateLabels[last];
+            const string title = "Диаграмма: обращения и наряды";
+
+            double obr = model.TotalObrClosed[last];
+            double nar = model.TotalNarClosed[last];
+            if (obr <= 0 && nar <= 0)
+                return ToImage(title, NewPlot(title + " — нет данных"));
+
+            double[] values = { Math.Max(obr, 0), Math.Max(nar, 0) };
+            double total = values.Sum();
+            string[] legend =
+            {
+                $"Обращения — {values[0]:0} ({Pct(values[0], total)})",
+                $"Наряды — {values[1]:0} ({Pct(values[1], total)})"
+            };
+
+            var plt = NewPiePlot(title, "Период: " + lastLabel + "   ·   Итого: " + total.ToString("0"));
+            var pie = plt.AddPie(values);
+            pie.ShowLabels = false;
+            pie.ShowPercentages = false;
+            pie.ShowValues = false;
+            pie.DonutSize = 0.4;
+            pie.Size = 0.55;
+            pie.DonutLabel = total.ToString("0");
+            pie.CenterFont.Size = 16;
+            pie.CenterFont.Bold = true;
+            pie.CenterFont.Color = BrandBlue;
+            pie.SliceFillColors = new[] { BrandBlue, Green };
+            pie.LegendLabels = legend;
+            plt.Legend(true, Alignment.MiddleRight);
+            ApplyPieLayout(plt);
+
+            return ToImage(title, plt);
+        }
+
+        private static string Pct(double part, double total) =>
+            total <= 0 ? "0%" : (part / total * 100).ToString("0") + "%";
+
         private static Plot NewPlot(string title)
         {
             var plt = new Plot(Width, Height);
-            plt.Title(title, size: 14, color: BrandBlue, bold: true);
+            plt.Title(title, size: 15, color: BrandBlue, bold: true);
             plt.Style(figureBackground: Color.White, dataBackground: Color.FromArgb(247, 250, 252));
             plt.Grid(color: Color.FromArgb(220, 227, 234));
             return plt;
         }
 
+        private static Plot NewPiePlot(string title, string subtitle)
+        {
+            var plt = new Plot(Width, Height);
+            plt.Title(title, size: 15, color: BrandBlue, bold: true);
+            plt.XLabel(subtitle);
+            plt.Style(figureBackground: Color.White, dataBackground: Color.White);
+            plt.Grid(enable: false);
+            plt.XAxis.Ticks(false);
+            plt.YAxis.Ticks(false);
+            plt.XAxis.Line(false);
+            plt.YAxis.Line(false);
+            return plt;
+        }
+
+        private static void ApplyCartesianLayout(Plot plt, float left = 70, float right = 25, float bottom = 55, float top = 60)
+        {
+            plt.Layout(left: left, right: right, bottom: bottom, top: top);
+        }
+
+        private static void ApplyPieLayout(Plot plt)
+        {
+            // место справа под легенду, сверху под заголовок, снизу под подпись периода
+            plt.Layout(left: 40, right: 320, bottom: 50, top: 55);
+        }
+
         private static ChartImage ToImage(string title, Plot plt)
         {
-            // GetImageBytes возвращает PNG
             byte[] png = plt.GetImageBytes(lowQuality: false, scale: 1);
             return new ChartImage { Title = title, Png = png };
         }

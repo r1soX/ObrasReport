@@ -34,7 +34,7 @@ namespace ObrasReport
             {
                 if (string.IsNullOrWhiteSpace(warning))
                 {
-                    WarningText.Text = "Графики не удалось построить. Таблицы отчёта можно сохранить без листа «Графики».";
+                    WarningText.Text = "Графики и диаграммы не удалось построить. Таблицы отчёта можно сохранить без листа «Графики».";
                     WarningText.Visibility = Visibility.Visible;
                 }
                 ChartsList.ItemsSource = null;

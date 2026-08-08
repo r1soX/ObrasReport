@@ -58,7 +58,7 @@ namespace ObrasReport.Models
         public override string ToString() => Name;
     }
 
-    /// <summary>Произвольная таблица из любого .xlsx (для универсального режима).</summary>
+    /// <summary>Произвольная таблица из любой книги Excel (для универсального режима).</summary>
     public class UniversalTable
     {
         public string FilePath;

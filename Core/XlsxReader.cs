@@ -1,24 +1,133 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using ExcelDataReader;
 
 namespace ObrasReport.Core
 {
     /// <summary>
-    /// Минимальный устойчивый читатель .xlsx: читает первый лист как таблицу ячеек.
-    /// Не зависит от регистра имени xl/SharedStrings.xml (частая проблема выгрузок 1С),
-    /// поддерживает shared/inline строки и числовые значения.
+    /// Читатель первого листа Excel: .xlsx / .xlsm (Open XML) и .xls / .xlsb (BIFF/binary).
+    /// Для .xlsx предпочтителен собственный ZIP+XML-парсер (устойчив к регистру SharedStrings из 1С);
+    /// при ошибке и для .xls/.xlsb используется ExcelDataReader.
     /// </summary>
     public static class XlsxReader
     {
         private static readonly XNamespace NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
+        private static readonly HashSet<string> SupportedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".xlsx", ".xlsm", ".xls", ".xlsb"
+        };
+
+        public static bool IsSupportedExcel(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            return SupportedExt.Contains(Path.GetExtension(path));
+        }
+
         /// <summary>Строки листа: индекс строки (1-based) -> (индекс колонки 1-based -> значение).</summary>
         public static SortedDictionary<int, Dictionary<int, string>> ReadFirstSheet(string path)
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException("Файл не найден.", path);
+
+            string ext = Path.GetExtension(path) ?? "";
+            if (!IsSupportedExcel(path))
+                throw new InvalidDataException(
+                    "Неподдерживаемый формат. Допустимы: .xlsx, .xlsm, .xls, .xlsb.");
+
+            bool openXml = ext.Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
+                           || ext.Equals(".xlsm", StringComparison.OrdinalIgnoreCase);
+
+            if (openXml)
+            {
+                try { return ReadOpenXml(path); }
+                catch (Exception primary)
+                {
+                    try { return ReadWithExcelDataReader(path); }
+                    catch (Exception fallback)
+                    {
+                        throw new InvalidDataException(
+                            "Не удалось прочитать книгу Excel (.xlsx/.xlsm): " + primary.Message +
+                            " / запасной читатель: " + fallback.Message, primary);
+                    }
+                }
+            }
+
+            return ReadWithExcelDataReader(path);
+        }
+
+        // ---------- Excel 97-2003 / binary (.xls, .xlsb) и запасной путь ----------
+        private static SortedDictionary<int, Dictionary<int, string>> ReadWithExcelDataReader(string path)
+        {
+            var rows = new SortedDictionary<int, Dictionary<int, string>>();
+            var conf = new ExcelReaderConfiguration
+            {
+                // старые .xls из 1С часто в Windows-1251
+                FallbackEncoding = Encoding.GetEncoding(1251)
+            };
+
+            using (var fs = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = ExcelReaderFactory.CreateReader(fs, conf))
+            {
+                int rowIdx = 0;
+                while (reader.Read())
+                {
+                    rowIdx++;
+                    var dict = new Dictionary<int, string>();
+                    for (int c = 0; c < reader.FieldCount; c++)
+                    {
+                        if (reader.IsDBNull(c)) continue;
+                        string val = CellToString(reader.GetValue(c));
+                        if (string.IsNullOrWhiteSpace(val)) continue;
+                        dict[c + 1] = val;
+                    }
+                    if (dict.Count > 0)
+                        rows[rowIdx] = dict;
+                }
+                // только первый лист (без NextResult)
+            }
+
+            if (rows.Count == 0)
+                throw new InvalidDataException("Лист пуст или не удалось разобрать ячейки.");
+            return rows;
+        }
+
+        private static string CellToString(object val)
+        {
+            if (val == null) return null;
+            if (val is string s) return s;
+            if (val is DateTime dt) return dt.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+            if (val is double d)
+            {
+                if (Math.Abs(d - Math.Round(d)) < 1e-9)
+                    return ((long)Math.Round(d)).ToString(CultureInfo.InvariantCulture);
+                return d.ToString(CultureInfo.InvariantCulture);
+            }
+            if (val is float f)
+            {
+                if (Math.Abs(f - Math.Round(f)) < 1e-5)
+                    return ((long)Math.Round(f)).ToString(CultureInfo.InvariantCulture);
+                return f.ToString(CultureInfo.InvariantCulture);
+            }
+            if (val is decimal m)
+            {
+                if (m == decimal.Truncate(m))
+                    return decimal.Truncate(m).ToString(CultureInfo.InvariantCulture);
+                return m.ToString(CultureInfo.InvariantCulture);
+            }
+            if (val is bool b) return b ? "TRUE" : "FALSE";
+            return Convert.ToString(val, CultureInfo.InvariantCulture);
+        }
+
+        // ---------- Open XML (.xlsx / .xlsm) — устойчивый к SharedStrings ----------
+        private static SortedDictionary<int, Dictionary<int, string>> ReadOpenXml(string path)
         {
             using (var fs = File.OpenRead(path))
             using (var zip = new ZipArchive(fs, ZipArchiveMode.Read))
@@ -91,7 +200,6 @@ namespace ObrasReport.Core
 
         private static ZipArchiveEntry FindSheetEntry(ZipArchive zip)
         {
-            // предпочтительно sheet1.xml, иначе первый по имени лист
             var exact = zip.Entries.FirstOrDefault(e =>
                 string.Equals(e.FullName, "xl/worksheets/sheet1.xml", StringComparison.OrdinalIgnoreCase));
             if (exact != null) return exact;

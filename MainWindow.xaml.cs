@@ -133,7 +133,7 @@ namespace ObrasReport
             var dlg = new OpenFileDialog
             {
                 Multiselect = true,
-                Filter = "Книги Excel (*.xlsx)|*.xlsx|Все файлы (*.*)|*.*",
+                Filter = "Книги Excel (*.xlsx;*.xlsm;*.xls;*.xlsb)|*.xlsx;*.xlsm;*.xls;*.xlsb|Все файлы (*.*)|*.*",
                 Title = "Выберите выгрузки обращений"
             };
             if (dlg.ShowDialog() == true)
@@ -146,9 +146,9 @@ namespace ObrasReport
             int added = 0;
             foreach (var path in paths)
             {
-                if (!path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                if (!XlsxReader.IsSupportedExcel(path))
                 {
-                    sb.AppendLine($"Пропущен (не .xlsx): {Path.GetFileName(path)}");
+                    sb.AppendLine($"Пропущен (не Excel): {Path.GetFileName(path)}");
                     continue;
                 }
                 if (_items.Any(i => string.Equals(i.Snapshot.FilePath, path, StringComparison.OrdinalIgnoreCase)))
@@ -537,13 +537,13 @@ namespace ObrasReport
                 {
                     charts = TrendChartRenderer.RenderAll(model);
                     if (charts == null || charts.Count == 0)
-                        chartWarn = "Графики не удалось построить. Таблицы будут сохранены без диаграмм (или с пустым листом «Графики»).";
+                        chartWarn = "Графики и диаграммы не удалось построить. Таблицы будут сохранены без визуализаций (или с пустым листом «Графики»).";
                 }
                 catch (Exception cex)
                 {
                     charts = new List<ChartImage>();
-                    chartWarn = "Ошибка построения графиков: " + cex.Message +
-                                " Таблицы можно сохранить без диаграмм.";
+                    chartWarn = "Ошибка построения графиков/диаграмм: " + cex.Message +
+                                " Таблицы можно сохранить без визуализаций.";
                 }
 
                 var preview = new ChartPreviewWindow(model, charts, chartWarn) { Owner = this };

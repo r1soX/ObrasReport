@@ -6,7 +6,7 @@ using ObrasReport.Models;
 
 namespace ObrasReport.Core
 {
-    /// <summary>Разбор произвольного .xlsx в таблицу: строка заголовков + строки данных.</summary>
+    /// <summary>Разбор произвольной книги Excel в таблицу: строка заголовков + строки данных.</summary>
     public static class UniversalParser
     {
         private static readonly Regex ObrRe = new Regex(@"^Обращение\s+(\d+)\s+от", RegexOptions.Compiled);

@@ -1,7 +1,7 @@
 <Window x:Class="ObrasReport.ChartPreviewWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Предпросмотр графиков динамики"
+        Title="Предпросмотр графиков и диаграмм"
         Height="720" Width="980"
         WindowStartupLocation="CenterOwner"
         FontFamily="Segoe UI" FontSize="13"
@@ -14,7 +14,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
-            <TextBlock Text="Графики прогресса закрытия" FontSize="18" FontWeight="Bold" Foreground="#1F4E78"/>
+            <TextBlock Text="Графики и диаграммы прогресса закрытия" FontSize="18" FontWeight="Bold" Foreground="#1F4E78"/>
             <TextBlock x:Name="SubtitleText" Foreground="#555" TextWrapping="Wrap" Margin="0,4,0,0"/>
             <TextBlock x:Name="WarningText" Foreground="#C62828" TextWrapping="Wrap" Margin="0,6,0,0"
                        Visibility="Collapsed"/>
@@ -43,7 +43,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Foreground="#777" FontSize="12"
-                       Text="После сохранения в Excel графики появятся на листе «Графики»."/>
+                       Text="После сохранения в Excel графики и диаграммы появятся на листе «Графики»."/>
             <Button Grid.Column="1" Content="Отмена" MinWidth="110" Padding="14,8" Margin="0,0,8,0"
                     Click="Cancel_Click" IsCancel="True"/>
             <Button Grid.Column="2" Content="Сохранить в Excel…" MinWidth="160" Padding="14,8"
