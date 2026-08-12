@@ -14,6 +14,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
@@ -33,6 +34,8 @@
                 <Button Content="Вверх" Click="Up_Click"/>
                 <Button Content="Вниз" Click="Down_Click"/>
                 <Button Content="Очистить" Click="Clear_Click"/>
+                <Button Content="Мастер отчёта…" Click="OpenWizard_Click" FontWeight="SemiBold"
+                        Background="#EAF4FF" BorderBrush="#B3D4F1" Margin="12,0,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="Вид отчёта:" VerticalAlignment="Center" Foreground="#444" Margin="0,0,6,0"/>
@@ -123,7 +126,32 @@
             </Grid>
         </Border>
 
-        <Border Grid.Row="3" x:Name="MappingPanel" Visibility="Collapsed" Margin="0,10,0,0"
+        <Border Grid.Row="3" x:Name="AnalyzerPanel" Visibility="Collapsed" Margin="0,10,0,0"
+                Background="#EAF4FF" BorderBrush="#B3D4F1" BorderThickness="1" CornerRadius="4" Padding="12,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="💡 " FontSize="16" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="AnalyzerSummary" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#1F4E78"
+                               VerticalAlignment="Center" Margin="4,0,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="AnalyzerRecommendation" TextWrapping="Wrap" Foreground="#334" Margin="20,0,0,4"/>
+                <ItemsControl x:Name="AnalyzerWarnings" Margin="20,0,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="#C62828" FontSize="12" Margin="0,2,0,0"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Orientation="Horizontal" Margin="20,6,0,0">
+                    <Button x:Name="ApplyRecommendationBtn" Content="Применить рекомендацию" Click="ApplyRecommendation_Click"
+                            Background="#1F4E78" Foreground="White" FontWeight="SemiBold" Padding="14,6"/>
+                    <Button x:Name="OpenWizardBtn" Content="Мастер отчёта…" Click="OpenWizard_Click"
+                            Padding="14,6" Margin="8,0,0,0"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="4" x:Name="MappingPanel" Visibility="Collapsed" Margin="0,10,0,0"
                 Background="#F7FAFC" BorderBrush="#DDE3EA" BorderThickness="1" CornerRadius="4" Padding="10">
             <StackPanel>
                 <TextBlock Text="Универсальный режим — настройка колонок:" FontWeight="SemiBold" Foreground="#1F4E78" Margin="0,0,0,6"/>
@@ -158,7 +186,7 @@
             </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="4" Margin="0,10,0,0">
+        <StackPanel Grid.Row="5" Margin="0,10,0,0">
             <TextBlock Text="Описание отчёта (необязательно):" Foreground="#444" Margin="0,0,0,4"/>
             <TextBox x:Name="DescriptionBox" MinHeight="46" MaxHeight="90" TextWrapping="Wrap"
                      AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
@@ -166,7 +194,7 @@
                      ToolTip="Например: контроль исполнения обращений по ремонтам за период 01.07–07.07. Текст попадёт в отчёт."/>
         </StackPanel>
 
-        <Border Grid.Row="5" Background="#F5F7FA" BorderBrush="#DDE3EA" BorderThickness="1" CornerRadius="4"
+        <Border Grid.Row="6" Background="#F5F7FA" BorderBrush="#DDE3EA" BorderThickness="1" CornerRadius="4"
                 Margin="0,10,0,10" MinHeight="56" MaxHeight="120">
             <TextBox x:Name="Log" Background="Transparent" BorderThickness="0" Margin="10"
                      IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
@@ -174,7 +202,7 @@
                      Text="Готово к работе. Перетащите файлы в окно или нажмите «Добавить файлы…»."/>
         </Border>
 
-        <Grid Grid.Row="6">
+        <Grid Grid.Row="7">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>

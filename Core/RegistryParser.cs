@@ -11,10 +11,7 @@ namespace ObrasReport.Core
     public static class RegistryParser
     {
         // строки-заголовки в колонке №1, которые не являются ни обращением, ни ответственным
-        private static readonly HashSet<string> SkipCol1 = new HashSet<string>
-        {
-            "Реестр обращений", "Параметры:", "Ответственный", "Обращение", "Ссылка", "Итого"
-        };
+        private static readonly HashSet<string> SkipCol1 = ReportConstants.RegistryHeaders;
 
         private static readonly Regex ObrRe = new Regex(@"^Обращение\s+(\d+)\s+от", RegexOptions.Compiled);
 

@@ -1,0 +1,98 @@
+<Window x:Class="ObrasReport.LivePreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Предпросмотр отчёта" Height="780" Width="1180"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI" FontSize="13"
+        Background="#F5F7FA">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- левая панель настроек -->
+        <Border Grid.Column="0" Background="White" BorderBrush="#DDE3EA" BorderThickness="0,0,1,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+                <StackPanel>
+                    <TextBlock Text="Оформление" FontWeight="Bold" Foreground="#1F4E78" FontSize="15" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Тема:" Foreground="#444" Margin="0,0,0,4"/>
+                    <ComboBox x:Name="ThemeCombo" Height="28" Margin="0,0,0,12"
+                              SelectionChanged="Theme_Changed">
+                        <ComboBoxItem Content="Синяя"/>
+                        <ComboBoxItem Content="Зелёная"/>
+                        <ComboBoxItem Content="Графит"/>
+                        <ComboBoxItem Content="Светлая"/>
+                    </ComboBox>
+
+                    <TextBlock Text="Содержимое" FontWeight="Bold" Foreground="#1F4E78" FontSize="15" Margin="0,8,0,10"/>
+                    <CheckBox x:Name="ShowChartsCb" Content="Графики и диаграммы" IsChecked="True"
+                              Margin="0,0,0,8" Checked="Option_Changed" Unchecked="Option_Changed"/>
+                    <CheckBox x:Name="ShowStatsCb" Content="Лист «Статистика»" IsChecked="True"
+                              Margin="0,0,0,8" Checked="Option_Changed" Unchecked="Option_Changed"/>
+                    <CheckBox x:Name="ShowCommentsCb" Content="Комментарии" IsChecked="True"
+                              Margin="0,0,0,8" Checked="Option_Changed" Unchecked="Option_Changed"/>
+                    <CheckBox x:Name="FreezeHeaderCb" Content="Заморозить шапку" IsChecked="True"
+                              Margin="0,0,0,8" Checked="Option_Changed" Unchecked="Option_Changed"/>
+                    <CheckBox x:Name="AutoFilterCb" Content="Автофильтр" IsChecked="True"
+                              Margin="0,0,0,8" Checked="Option_Changed" Unchecked="Option_Changed"/>
+
+                    <TextBlock Text="Графики" FontWeight="Bold" Foreground="#1F4E78" FontSize="15" Margin="0,8,0,10"/>
+                    <StackPanel x:Name="ChartTogglePanel"/>
+
+                    <Border Background="#F0F4F8" CornerRadius="4" Padding="10" Margin="0,16,0,0">
+                        <TextBlock x:Name="PreviewInfo" TextWrapping="Wrap" FontSize="11" Foreground="#555"/>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- правая панель: вкладки предпросмотра -->
+        <Grid Grid.Column="1" Margin="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TabControl x:Name="PreviewTabs" Grid.Row="1" Margin="10,10,10,0">
+                <TabItem Header="Сводная таблица">
+                    <DataGrid x:Name="TablePreview" IsReadOnly="True" AutoGenerateColumns="False"
+                              CanUserAddRows="False" CanUserDeleteRows="False"
+                              GridLinesVisibility="All" HeadersVisibility="Column"
+                              BorderBrush="#DDE3EA" BorderThickness="1"
+                              FontSize="11" RowHeight="28"
+                              ColumnHeaderHeight="36"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto"/>
+                </TabItem>
+                <TabItem Header="Графики">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="8">
+                        <ItemsControl x:Name="ChartsPreview">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,16">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="#1F4E78" Margin="0,0,0,4"/>
+                                        <Image Source="{Binding Image}" Stretch="Uniform" MaxWidth="900" HorizontalAlignment="Left"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="Статистика">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
+                        <TextBlock x:Name="StatsPreview" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"/>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,10,12">
+                <Button Content="Отмена" Click="Cancel_Click" MinWidth="110" Padding="14,8" Margin="0,0,8,0"/>
+                <Button Content="Сохранить в Excel…" Click="Save_Click" MinWidth="180" Padding="14,8"
+                        Background="#1F4E78" Foreground="White" FontWeight="Bold"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

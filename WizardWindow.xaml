@@ -1,0 +1,35 @@
+<Window x:Class="ObrasReport.WizardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Мастер отчёта" Height="560" Width="720"
+        WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI" FontSize="14"
+        Background="#F5F7FA">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- прогресс шагов -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+            <TextBlock x:Name="StepIndicator" Text="Шаг 1 из 4" FontWeight="Bold" Foreground="#1F4E78" FontSize="16"/>
+            <TextBlock x:Name="StepTitle" Text=" — Что хотите получить?" Foreground="#555" FontSize="16" Margin="8,0,0,0"/>
+        </StackPanel>
+
+        <!-- контент шага -->
+        <Border Grid.Row="1" Background="White" BorderBrush="#DDE3EA" BorderThickness="1" CornerRadius="6" Padding="20">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="StepContentPanel"/>
+            </ScrollViewer>
+        </Border>
+
+        <!-- кнопки навигации -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="BackBtn" Content="← Назад" Click="Back_Click" MinWidth="110" Padding="14,8" Margin="0,0,8,0"/>
+            <Button x:Name="NextBtn" Content="Далее →" Click="Next_Click" MinWidth="110" Padding="14,8"
+                    Background="#1F4E78" Foreground="White" FontWeight="Bold"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -90,9 +90,9 @@ namespace ObrasReport
             }
 
             // ---- категория отчёта (для группировки и раздельных отчётов) ----
-            public const string CatRepairs = "По ремонту";
-            public const string CatNonRepair = "Не по ремонту";
-            public const string CatVideo = "Видеонаблюдение";
+            public const string CatRepairs = ReportConstants.CatRepairs;
+            public const string CatNonRepair = ReportConstants.CatNonRepair;
+            public const string CatVideo = ReportConstants.CatVideo;
 
             private static readonly IReadOnlyList<string> RepairsCats = new[] { CatRepairs };
             private static readonly IReadOnlyList<string> ColoredCats = new[] { CatNonRepair, CatVideo };
@@ -181,8 +181,7 @@ namespace ObrasReport
             Log.Text = sb.ToString().TrimEnd();
         }
 
-        private static string ToText(LayoutType t) =>
-            t == LayoutType.Repairs ? "По ремонтам" : t == LayoutType.Colored ? "Не по ремонту" : "Формат не определён";
+        private static string ToText(LayoutType t) => ReportConstants.LayoutText(t);
 
         private void SortByDate()
         {
@@ -241,7 +240,115 @@ namespace ObrasReport
             bool universal = Effective() == ReportTemplate.Universal;
             MappingPanel.Visibility = universal ? Visibility.Visible : Visibility.Collapsed;
             if (universal) PopulateColumns();
+            UpdateAnalyzer();
         }
+
+        // ---------- умный анализатор ----------
+        private void UpdateAnalyzer()
+        {
+            if (AnalyzerPanel == null) return;
+
+            if (_items.Count == 0)
+            {
+                AnalyzerPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var inputs = _items.Select(i => new AnalyzerInput
+            {
+                FileName = i.FileName,
+                Layout = i.Snapshot.Layout,
+                RecordCount = i.Count,
+                IsTrend = i.Trend != null,
+                HasTable = i.Table != null && i.Table.Columns.Count > 0,
+                Category = i.Category
+            }).ToList();
+
+            var result = ReportAnalyzer.Analyze(inputs);
+
+            AnalyzerSummary.Text = result.Summary;
+            AnalyzerRecommendation.Text = result.Recommendation;
+            AnalyzerWarnings.ItemsSource = result.Warnings.Count > 0 ? result.Warnings : null;
+
+            // кнопка «Применить» — переводит ComboBox шаблонов на рекомендованный
+            int targetIndex = 0;
+            switch (result.RecommendedTemplate)
+            {
+                case ReportTemplate.Obrasheniya: targetIndex = 1; break;
+                case ReportTemplate.Universal:   targetIndex = 2; break;
+                case ReportTemplate.ClosedTrend: targetIndex = 3; break;
+            }
+            ApplyRecommendationBtn.Visibility =
+                TemplateCombo.SelectedIndex != targetIndex ? Visibility.Visible : Visibility.Collapsed;
+
+            AnalyzerPanel.Visibility = Visibility.Visible;
+        }
+
+        private void ApplyRecommendation_Click(object sender, RoutedEventArgs e)
+        {
+            var inputs = _items.Select(i => new AnalyzerInput
+            {
+                FileName = i.FileName,
+                Layout = i.Snapshot.Layout,
+                RecordCount = i.Count,
+                IsTrend = i.Trend != null,
+                HasTable = i.Table != null && i.Table.Columns.Count > 0,
+                Category = i.Category
+            }).ToList();
+            var result = ReportAnalyzer.Analyze(inputs);
+
+            int targetIndex = 0;
+            switch (result.RecommendedTemplate)
+            {
+                case ReportTemplate.Obrasheniya: targetIndex = 1; break;
+                case ReportTemplate.Universal:   targetIndex = 2; break;
+                case ReportTemplate.ClosedTrend: targetIndex = 3; break;
+            }
+            if (TemplateCombo.SelectedIndex != targetIndex)
+                TemplateCombo.SelectedIndex = targetIndex;
+        }
+
+        private void OpenWizard_Click(object sender, RoutedEventArgs e)
+        {
+            var wizard = new WizardWindow(this) { Owner = this };
+            wizard.ShowDialog();
+        }
+
+        /// <summary>Список категорий по загруженным файлам (для мастера).</summary>
+        public List<string> DetectedCategories() =>
+            _items.Select(i => i.Category).Where(c => !string.IsNullOrWhiteSpace(c))
+                  .Distinct().OrderBy(c => c).ToList();
+
+        /// <summary>Применяет выбор мастера: шаблон, категорию, опции и тему.</summary>
+        public void ApplyWizard(ReportTemplate template, string category,
+            bool showCharts, bool showStats, bool showComments, string theme)
+        {
+            // шаблон
+            int idx = 0;
+            switch (template)
+            {
+                case ReportTemplate.Obrasheniya: idx = 1; break;
+                case ReportTemplate.Universal:   idx = 2; break;
+                case ReportTemplate.ClosedTrend: idx = 3; break;
+            }
+            if (TemplateCombo.SelectedIndex != idx)
+                TemplateCombo.SelectedIndex = idx;
+
+            // категория (пока только запоминаем — фильтрация в Generate_Click)
+            _wizardCategory = category;
+            _wizardShowCharts = showCharts;
+            _wizardShowStats = showStats;
+            _wizardShowComments = showComments;
+            _wizardTheme = theme;
+
+            Log.Text = "Мастер применил настройки. Нажмите «Сформировать отчёт» для предпросмотра.";
+        }
+
+        private string _wizardCategory;
+        private bool _wizardShowCharts = true;
+        private bool _wizardShowStats = true;
+        private bool _wizardShowComments = true;
+        private string _wizardTheme = "Синяя";
 
         /// <summary>Заполняет списки колонок для универсального режима из первого файла.</summary>
         private void PopulateColumns()
@@ -362,11 +469,12 @@ namespace ObrasReport
                     string subtitle = $"Категория: {g.Key}. Периоды: {periods}." +
                                      (string.IsNullOrWhiteSpace(desc) ? "" : " Описание: " + desc);
 
-                    var preview = new ChartPreviewWindow(
-                        subtitle, charts, chartWarn,
-                        heading: "Графики и диаграммы — " + g.Key)
+                    var preview = new LivePreviewWindow(
+                        model, charts, subtitle,
+                        heading: "Графики и диаграммы — " + g.Key,
+                        theme: _wizardTheme)
                     { Owner = this };
-                    if (preview.ShowDialog() != true || !preview.SaveConfirmed)
+                    if (preview.ShowDialog() != true)
                     {
                         Log.Text = "Сохранение отчёта отменено.";
                         return;
@@ -381,7 +489,7 @@ namespace ObrasReport
                     };
                     if (dlg.ShowDialog() != true) return;
 
-                    ExcelReportWriter.Write(model, dlg.FileName, charts);
+                    ExcelReportWriter.Write(model, dlg.FileName, preview.ChartsEnabled ? charts : null);
                     created.Add(Tuple.Create(g.Key, dlg.FileName, model));
                 }
                 catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
@@ -411,19 +519,19 @@ namespace ObrasReport
                         string subtitle = $"Категория: {g.Key}. Периоды: {periods}." +
                                          (string.IsNullOrWhiteSpace(desc) ? "" : " Описание: " + desc);
 
-                        var preview = new ChartPreviewWindow(
-                            subtitle, charts, chartWarn,
+                        var preview = new LivePreviewWindow(
+                            model, charts, subtitle,
                             heading: "Графики и диаграммы — " + g.Key,
-                            saveButtonText: "Сохранить эту категорию…")
+                            theme: _wizardTheme)
                         { Owner = this };
-                        if (preview.ShowDialog() != true || !preview.SaveConfirmed)
+                        if (preview.ShowDialog() != true)
                         {
                             errors.Add($"{g.Key}: сохранение пропущено пользователем");
                             continue;
                         }
 
                         string path = Path.Combine(targetDir, SuggestName(model));
-                        ExcelReportWriter.Write(model, path, charts);
+                        ExcelReportWriter.Write(model, path, preview.ChartsEnabled ? charts : null);
                         created.Add(Tuple.Create(g.Key, path, model));
                     }
                     catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }

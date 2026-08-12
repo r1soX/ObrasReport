@@ -34,8 +34,8 @@ namespace ObrasReport.Core
             { "Возвращено", "возвращено, ожидает уточнения инициатора" },
         };
 
-        private const string ITOG_DONE = "Обработано";
-        private const string ITOG_CONTROL = "На контроле исполнения";
+        private const string ITOG_DONE = ReportConstants.ItogDone;
+        private const string ITOG_CONTROL = ReportConstants.ItogControl;
 
         public static ReportModel Build(IEnumerable<Snapshot> snapshotsInput)
         {
