@@ -1,7 +1,7 @@
 <Window x:Class="ObrasReport.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Отчёт по обработке обращений" Height="680" Width="1000"
+        Title="Отчёт по обработке обращений" Height="680" Width="1280"
         WindowStartupLocation="CenterScreen"
         AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver"
         FontFamily="Segoe UI" FontSize="13">

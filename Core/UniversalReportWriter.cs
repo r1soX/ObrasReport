@@ -9,24 +9,18 @@ namespace ObrasReport.Core
     /// <summary>Запись универсального (нейтрального) отчёта в оформленный .xlsx.</summary>
     public static class UniversalReportWriter
     {
-        private static readonly XLColor HeaderFill = XLColor.FromHtml("#1F4E78");
-        private static readonly XLColor TitleColor = XLColor.FromHtml("#1F4E78");
-        private static readonly XLColor Green = XLColor.FromHtml("#E2EFDA");
-        private static readonly XLColor Amber = XLColor.FromHtml("#FFF2CC");
-        private static readonly XLColor Blue = XLColor.FromHtml("#DDEBF7");
-        private static readonly XLColor Grey = XLColor.FromHtml("#EDEDED");
-
-        public static void Write(UniversalReportModel model, string outputPath)
+        public static void Write(UniversalReportModel model, string outputPath, ReportTheme theme = null)
         {
+            var t = theme ?? ReportTheme.Get("Синяя");
             using (var wb = new XLWorkbook())
             {
-                WriteTable(wb, model);
-                WriteStats(wb, model);
+                WriteTable(wb, model, t);
+                WriteStats(wb, model, t);
                 wb.SaveAs(outputPath);
             }
         }
 
-        private static void WriteTable(XLWorkbook wb, UniversalReportModel model)
+        private static void WriteTable(XLWorkbook wb, UniversalReportModel model, ReportTheme t)
         {
             var ws = wb.AddWorksheet("Сравнение");
             bool tracked = !string.IsNullOrEmpty(model.TrackedHeader);
@@ -35,13 +29,13 @@ namespace ObrasReport.Core
                 ? "Универсальное сравнение таблиц" : model.Title;
             ws.Cell(1, 1).Style.Font.Bold = true;
             ws.Cell(1, 1).Style.Font.FontSize = 13;
-            ws.Cell(1, 1).Style.Font.FontColor = TitleColor;
+            ws.Cell(1, 1).Style.Font.FontColor = t.TitleColorXL;
 
             ws.Cell(2, 1).Value = "Сравнение по ключу «" + model.KeyHeader + "». Даты: " +
                                   string.Join(", ", model.DateLabels) + ".";
             ws.Cell(2, 1).Style.Font.Italic = true;
             ws.Cell(2, 1).Style.Font.FontSize = 9;
-            ws.Cell(2, 1).Style.Font.FontColor = XLColor.FromHtml("#595959");
+            ws.Cell(2, 1).Style.Font.FontColor = t.SubtitleXL;
 
             if (!string.IsNullOrWhiteSpace(model.Description))
             {
@@ -61,7 +55,7 @@ namespace ObrasReport.Core
             {
                 var cell = ws.Cell(hr, c + 1);
                 cell.Value = headers[c];
-                cell.Style.Fill.BackgroundColor = HeaderFill;
+                cell.Style.Fill.BackgroundColor = t.HeaderFillXL;
                 cell.Style.Font.Bold = true;
                 cell.Style.Font.FontColor = XLColor.White;
                 cell.Style.Font.FontSize = 10;
@@ -86,18 +80,18 @@ namespace ObrasReport.Core
                 itog.Style.Font.FontSize = 9;
                 switch (row.Kind)
                 {
-                    case "added": itog.Style.Fill.BackgroundColor = Blue; itog.Style.Font.FontColor = XLColor.FromHtml("#1F4E78"); break;
-                    case "removed": itog.Style.Fill.BackgroundColor = Grey; itog.Style.Font.FontColor = XLColor.FromHtml("#595959"); break;
-                    case "changed": itog.Style.Fill.BackgroundColor = Amber; itog.Style.Font.FontColor = XLColor.FromHtml("#7F6000"); break;
-                    default: itog.Style.Fill.BackgroundColor = Green; itog.Style.Font.FontColor = XLColor.FromHtml("#375623"); break;
+                    case "added": itog.Style.Fill.BackgroundColor = t.BlueFillXL; itog.Style.Font.FontColor = t.TitleColorXL; break;
+                    case "removed": itog.Style.Fill.BackgroundColor = t.GreyFillXL; itog.Style.Font.FontColor = t.SubtitleXL; break;
+                    case "changed": itog.Style.Fill.BackgroundColor = t.AmberFillXL; itog.Style.Font.FontColor = t.AmberTextXL; break;
+                    default: itog.Style.Fill.BackgroundColor = t.GreenFillXL; itog.Style.Font.FontColor = t.GreenTextXL; break;
                 }
             }
 
             var used = ws.Range(hr, 1, r, headers.Count);
             used.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             used.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
-            used.Style.Border.OutsideBorderColor = XLColor.FromHtml("#B0B0B0");
-            used.Style.Border.InsideBorderColor = XLColor.FromHtml("#B0B0B0");
+            used.Style.Border.OutsideBorderColor = t.BorderXL;
+            used.Style.Border.InsideBorderColor = t.BorderXL;
             var body = ws.Range(hr + 1, 1, r, headers.Count);
             body.Style.Font.FontSize = 9;
             body.Style.Alignment.WrapText = true;
@@ -108,19 +102,19 @@ namespace ObrasReport.Core
             for (int i = 0; i < model.DisplayHeaders.Count; i++) ws.Column(3 + i).Width = 20;
             int after = 3 + model.DisplayHeaders.Count;
             if (tracked) for (int i = 0; i < model.DateLabels.Count; i++) ws.Column(after++).Width = 18;
-            ws.Column(after).Width = 16; // Итог
+            ws.Column(after).Width = 16;
 
             ws.SheetView.FreezeRows(hr);
             ws.Range(hr, 1, r, headers.Count).SetAutoFilter();
         }
 
-        private static void WriteStats(XLWorkbook wb, UniversalReportModel model)
+        private static void WriteStats(XLWorkbook wb, UniversalReportModel model, ReportTheme t)
         {
             var ws = wb.AddWorksheet("Статистика");
             ws.Cell(1, 1).Value = "Итоги сравнения";
             ws.Cell(1, 1).Style.Font.Bold = true;
             ws.Cell(1, 1).Style.Font.FontSize = 13;
-            ws.Cell(1, 1).Style.Font.FontColor = TitleColor;
+            ws.Cell(1, 1).Style.Font.FontColor = t.TitleColorXL;
 
             var lines = new List<Tuple<string, bool>>
             {
@@ -152,7 +146,7 @@ namespace ObrasReport.Core
                 cell.Value = ln.Item1;
                 cell.Style.Font.FontSize = ln.Item2 ? 11 : 10;
                 cell.Style.Font.Bold = ln.Item2;
-                if (ln.Item2) cell.Style.Font.FontColor = TitleColor;
+                if (ln.Item2) cell.Style.Font.FontColor = t.TitleColorXL;
             }
             ws.Column(1).Width = 70;
         }

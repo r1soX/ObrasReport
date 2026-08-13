@@ -464,7 +464,8 @@ namespace ObrasReport
                     model.Description = desc;
                     model.CategoryLabel = g.Key;
 
-                    var charts = RenderObrCharts(model, out string chartWarn);
+                    var theme = ReportTheme.Get(_wizardTheme);
+                    var charts = RenderObrCharts(model, out string chartWarn, theme);
                     string periods = string.Join(", ", model.Snapshots.Select(s => s.Label));
                     string subtitle = $"Категория: {g.Key}. Периоды: {periods}." +
                                      (string.IsNullOrWhiteSpace(desc) ? "" : " Описание: " + desc);
@@ -489,7 +490,8 @@ namespace ObrasReport
                     };
                     if (dlg.ShowDialog() != true) return;
 
-                    ExcelReportWriter.Write(model, dlg.FileName, preview.ChartsEnabled ? charts : null);
+                    var finalTheme = ReportTheme.Get(preview.SelectedTheme);
+                    ExcelReportWriter.Write(model, dlg.FileName, preview.ChartsEnabled ? charts : null, finalTheme);
                     created.Add(Tuple.Create(g.Key, dlg.FileName, model));
                 }
                 catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
@@ -514,7 +516,8 @@ namespace ObrasReport
                         model.Description = desc;
                         model.CategoryLabel = g.Key;
 
-                        var charts = RenderObrCharts(model, out string chartWarn);
+                        var theme = ReportTheme.Get(_wizardTheme);
+                        var charts = RenderObrCharts(model, out string chartWarn, theme);
                         string periods = string.Join(", ", model.Snapshots.Select(s => s.Label));
                         string subtitle = $"Категория: {g.Key}. Периоды: {periods}." +
                                          (string.IsNullOrWhiteSpace(desc) ? "" : " Описание: " + desc);
@@ -531,7 +534,8 @@ namespace ObrasReport
                         }
 
                         string path = Path.Combine(targetDir, SuggestName(model));
-                        ExcelReportWriter.Write(model, path, preview.ChartsEnabled ? charts : null);
+                        var finalTheme = ReportTheme.Get(preview.SelectedTheme);
+                        ExcelReportWriter.Write(model, path, preview.ChartsEnabled ? charts : null, finalTheme);
                         created.Add(Tuple.Create(g.Key, path, model));
                     }
                     catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
@@ -609,6 +613,20 @@ namespace ObrasReport
                 model.Title = "Универсальное сравнение таблиц";
                 model.Description = DescriptionBox.Text?.Trim();
 
+                string periods = string.Join(", ", model.DateLabels);
+                string subtitle = $"Ключ: {model.KeyHeader}. Даты: {periods}." +
+                                  (string.IsNullOrWhiteSpace(model.Description) ? "" : " Описание: " + model.Description);
+
+                var preview = new LivePreviewWindow(model, subtitle,
+                    heading: "Универсальное сравнение таблиц",
+                    theme: _wizardTheme)
+                { Owner = this };
+                if (preview.ShowDialog() != true)
+                {
+                    Log.Text = "Сохранение отчёта отменено.";
+                    return;
+                }
+
                 var dlg = new SaveFileDialog
                 {
                     Filter = "Книга Excel (*.xlsx)|*.xlsx",
@@ -618,7 +636,7 @@ namespace ObrasReport
                 };
                 if (dlg.ShowDialog() != true) return;
 
-                UniversalReportWriter.Write(model, dlg.FileName);
+                UniversalReportWriter.Write(model, dlg.FileName, ReportTheme.Get(preview.SelectedTheme));
 
                 Log.Text = $"Универсальный отчёт сформирован: {dlg.FileName}\n" +
                            $"Ключ: {model.KeyHeader}. Строк: {model.Rows.Count}. " +
@@ -638,12 +656,12 @@ namespace ObrasReport
             }
         }
 
-        private static List<ChartImage> RenderObrCharts(ReportModel model, out string warning)
+        private static List<ChartImage> RenderObrCharts(ReportModel model, out string warning, ReportTheme theme = null)
         {
             warning = null;
             try
             {
-                var charts = ReportChartRenderer.RenderAll(model);
+                var charts = ReportChartRenderer.RenderAll(model, theme);
                 if (charts == null || charts.Count == 0)
                     warning = "Графики и диаграммы не удалось построить. Таблицы будут сохранены без визуализаций.";
                 return charts ?? new List<ChartImage>();
@@ -691,9 +709,10 @@ namespace ObrasReport
 
                 List<ChartImage> charts = null;
                 string chartWarn = null;
+                var trendTheme = ReportTheme.Get(_wizardTheme);
                 try
                 {
-                    charts = TrendChartRenderer.RenderAll(model);
+                    charts = TrendChartRenderer.RenderAll(model, trendTheme);
                     if (charts == null || charts.Count == 0)
                         chartWarn = "Графики и диаграммы не удалось построить. Таблицы будут сохранены без визуализаций (или с пустым листом «Графики»).";
                 }
@@ -707,10 +726,11 @@ namespace ObrasReport
                 string periods = string.Join(", ", model.DateLabels);
                 string subtitle = $"Периоды: {periods}." +
                                   (string.IsNullOrWhiteSpace(model.Description) ? "" : " Описание: " + model.Description);
-                var preview = new ChartPreviewWindow(subtitle, charts, chartWarn,
-                    heading: "Графики и диаграммы динамики")
+                var preview = new LivePreviewWindow(model, charts, subtitle,
+                    heading: "Динамика решённых обращений и нарядов",
+                    theme: _wizardTheme)
                 { Owner = this };
-                if (preview.ShowDialog() != true || !preview.SaveConfirmed)
+                if (preview.ShowDialog() != true)
                 {
                     Log.Text = "Сохранение отчёта динамики отменено.";
                     return;
@@ -725,7 +745,8 @@ namespace ObrasReport
                 };
                 if (dlg.ShowDialog() != true) return;
 
-                ClosedTrendWriter.Write(model, dlg.FileName, charts);
+                ClosedTrendWriter.Write(model, dlg.FileName, preview.ChartsEnabled ? charts : null,
+                    ReportTheme.Get(preview.SelectedTheme));
 
                 Log.Text = $"Отчёт динамики сформирован: {dlg.FileName}\n" +
                            $"Периоды: {string.Join(", ", model.DateLabels)}. Ответственных: {model.Rows.Count}.\n" +

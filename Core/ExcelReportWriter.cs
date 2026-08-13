@@ -9,19 +9,14 @@ namespace ObrasReport.Core
     /// <summary>Запись готовой модели отчёта в оформленный .xlsx.</summary>
     public static class ExcelReportWriter
     {
-        private static readonly XLColor HeaderFill = XLColor.FromHtml("#1F4E78");
-        private static readonly XLColor TitleColor = XLColor.FromHtml("#1F4E78");
-        private static readonly XLColor GreenFill = XLColor.FromHtml("#E2EFDA");
-        private static readonly XLColor AmberFill = XLColor.FromHtml("#FFF2CC");
-        private static readonly XLColor GreenText = XLColor.FromHtml("#375623");
-        private static readonly XLColor AmberText = XLColor.FromHtml("#7F6000");
-
-        public static void Write(ReportModel model, string outputPath, IList<ChartImage> charts = null)
+        public static void Write(ReportModel model, string outputPath, IList<ChartImage> charts = null,
+            ReportTheme theme = null)
         {
+            var t = theme ?? ReportTheme.Get("Синяя");
             using (var wb = new XLWorkbook())
             {
-                WriteTable(wb, model);
-                WriteStats(wb, model);
+                WriteTable(wb, model, t);
+                WriteStats(wb, model, t);
                 string cat = string.IsNullOrWhiteSpace(model.CategoryLabel)
                     ? (model.Layout == LayoutType.Repairs ? "По ремонту" : "Не по ремонту")
                     : model.CategoryLabel;
@@ -31,12 +26,13 @@ namespace ObrasReport.Core
                     "Графики и диаграммы — " + cat,
                     periods,
                     charts,
-                    "ObrChart_");
+                    "ObrChart_",
+                    t);
                 wb.SaveAs(outputPath);
             }
         }
 
-        private static void WriteTable(XLWorkbook wb, ReportModel model)
+        private static void WriteTable(XLWorkbook wb, ReportModel model, ReportTheme t)
         {
             var ws = wb.AddWorksheet("Сводная таблица");
             bool repairs = model.Layout == LayoutType.Repairs;
@@ -48,14 +44,14 @@ namespace ObrasReport.Core
             ws.Cell(1, 1).Value = title;
             ws.Cell(1, 1).Style.Font.Bold = true;
             ws.Cell(1, 1).Style.Font.FontSize = 13;
-            ws.Cell(1, 1).Style.Font.FontColor = TitleColor;
+            ws.Cell(1, 1).Style.Font.FontColor = t.TitleColorXL;
 
             string period = "Период: выгрузки " + string.Join(", ", model.Snapshots.Select(s => s.Label)) + ". " +
                             (repairs ? "Признак обработки — изменение состояния обращения." : "Признак обработки — снятие обращения с выгрузки.");
             ws.Cell(2, 1).Value = period;
             ws.Cell(2, 1).Style.Font.Italic = true;
             ws.Cell(2, 1).Style.Font.FontSize = 9;
-            ws.Cell(2, 1).Style.Font.FontColor = XLColor.FromHtml("#595959");
+            ws.Cell(2, 1).Style.Font.FontColor = t.SubtitleXL;
 
             if (!string.IsNullOrWhiteSpace(model.Description))
             {
@@ -89,7 +85,7 @@ namespace ObrasReport.Core
             {
                 var cell = ws.Cell(hr, c + 1);
                 cell.Value = headers[c];
-                cell.Style.Fill.BackgroundColor = HeaderFill;
+                cell.Style.Fill.BackgroundColor = t.HeaderFillXL;
                 cell.Style.Font.Bold = true;
                 cell.Style.Font.FontColor = XLColor.White;
                 cell.Style.Font.FontSize = 10;
@@ -98,7 +94,6 @@ namespace ObrasReport.Core
                 cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
             }
 
-            int itogCol = headers.Count - 1;   // 1-based позже
             int r = hr;
             foreach (var row in model.Rows)
             {
@@ -128,13 +123,13 @@ namespace ObrasReport.Core
                 itog.Style.Font.FontSize = 9;
                 if (row.Processed)
                 {
-                    itog.Style.Fill.BackgroundColor = GreenFill;
-                    itog.Style.Font.FontColor = GreenText;
+                    itog.Style.Fill.BackgroundColor = t.GreenFillXL;
+                    itog.Style.Font.FontColor = t.GreenTextXL;
                 }
                 else
                 {
-                    itog.Style.Fill.BackgroundColor = AmberFill;
-                    itog.Style.Font.FontColor = AmberText;
+                    itog.Style.Fill.BackgroundColor = t.AmberFillXL;
+                    itog.Style.Font.FontColor = t.AmberTextXL;
                 }
 
                 ws.Cell(r, c++).Value = row.Comment;
@@ -143,8 +138,8 @@ namespace ObrasReport.Core
             var used = ws.Range(hr, 1, r, headers.Count);
             used.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             used.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
-            used.Style.Border.OutsideBorderColor = XLColor.FromHtml("#B0B0B0");
-            used.Style.Border.InsideBorderColor = XLColor.FromHtml("#B0B0B0");
+            used.Style.Border.OutsideBorderColor = t.BorderXL;
+            used.Style.Border.InsideBorderColor = t.BorderXL;
 
             var body = ws.Range(hr + 1, 1, r, headers.Count);
             body.Style.Font.FontSize = 9;
@@ -158,25 +153,25 @@ namespace ObrasReport.Core
             int col0 = 4;
             if (repairs)
             {
-                ws.Column(col0++).Width = 14; // филиал
-                ws.Column(col0++).Width = 18; // классификатор
-                ws.Column(col0++).Width = 11; // критичность
-                ws.Column(col0++).Width = 10; // дней
+                ws.Column(col0++).Width = 14;
+                ws.Column(col0++).Width = 18;
+                ws.Column(col0++).Width = 11;
+                ws.Column(col0++).Width = 10;
             }
             else
             {
-                ws.Column(col0++).Width = 18; // объект
-                if (model.HasService) ws.Column(col0++).Width = 24; // услуга
+                ws.Column(col0++).Width = 18;
+                if (model.HasService) ws.Column(col0++).Width = 24;
             }
             for (int i = 0; i < model.Snapshots.Count; i++) ws.Column(col0++).Width = 19;
-            ws.Column(col0++).Width = 20; // итог
-            ws.Column(col0).Width = 60;   // комментарий
+            ws.Column(col0++).Width = 20;
+            ws.Column(col0).Width = 60;
 
             ws.SheetView.FreezeRows(hr);
             ws.Range(hr, 1, r, headers.Count).SetAutoFilter();
         }
 
-        private static void WriteStats(XLWorkbook wb, ReportModel model)
+        private static void WriteStats(XLWorkbook wb, ReportModel model, ReportTheme t)
         {
             var ws = wb.AddWorksheet("Статистика");
             bool repairs = model.Layout == LayoutType.Repairs;
@@ -184,10 +179,9 @@ namespace ObrasReport.Core
             ws.Cell(1, 1).Value = "Общая статистика и динамика";
             ws.Cell(1, 1).Style.Font.Bold = true;
             ws.Cell(1, 1).Style.Font.FontSize = 13;
-            ws.Cell(1, 1).Style.Font.FontColor = TitleColor;
+            ws.Cell(1, 1).Style.Font.FontColor = t.TitleColorXL;
 
             int r0 = 3;
-            // шапка таблицы по датам
             ws.Cell(r0, 1).Value = "Показатель";
             for (int i = 0; i < model.DateStats.Count; i++)
                 ws.Cell(r0, 2 + i).Value = model.DateStats[i].Label;
@@ -218,18 +212,17 @@ namespace ObrasReport.Core
             var tableRange = ws.Range(r0, 1, r0 + statRows.Count, 1 + model.DateStats.Count);
             tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
-            tableRange.Style.Border.OutsideBorderColor = XLColor.FromHtml("#B0B0B0");
-            tableRange.Style.Border.InsideBorderColor = XLColor.FromHtml("#B0B0B0");
+            tableRange.Style.Border.OutsideBorderColor = t.BorderXL;
+            tableRange.Style.Border.InsideBorderColor = t.BorderXL;
             var head = ws.Range(r0, 1, r0, 1 + model.DateStats.Count);
-            head.Style.Fill.BackgroundColor = HeaderFill;
+            head.Style.Fill.BackgroundColor = t.HeaderFillXL;
             head.Style.Font.Bold = true;
             head.Style.Font.FontColor = XLColor.White;
             head.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // блок динамики
             var lines = new List<Tuple<string, bool>>();
-            void Head(string t) => lines.Add(Tuple.Create(t, true));
-            void Line(string t) => lines.Add(Tuple.Create(t, false));
+            void Head(string txt) => lines.Add(Tuple.Create(txt, true));
+            void Line(string txt) => lines.Add(Tuple.Create(txt, false));
 
             Line("");
             Head("Итоги за период:");
@@ -272,7 +265,7 @@ namespace ObrasReport.Core
                 {
                     cell.Style.Font.Bold = true;
                     cell.Style.Font.FontSize = 11;
-                    cell.Style.Font.FontColor = TitleColor;
+                    cell.Style.Font.FontColor = t.TitleColorXL;
                 }
                 else cell.Style.Font.FontSize = 10;
             }

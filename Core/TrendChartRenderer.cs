@@ -17,25 +17,22 @@ namespace ObrasReport.Core
     /// <summary>Рендер графиков и диаграмм динамики закрытых обращений/нарядов (ScottPlot → PNG).</summary>
     public static class TrendChartRenderer
     {
-        private static readonly Color BrandBlue = ColorTranslator.FromHtml("#1F4E78");
-        private static readonly Color Green = ColorTranslator.FromHtml("#2E7D32");
-        private static readonly Color Accent = ColorTranslator.FromHtml("#5B8DB8");
-
         private const int Width = 980;
         private const int Height = 520;
 
-        public static List<ChartImage> RenderAll(TrendReportModel model)
+        public static List<ChartImage> RenderAll(TrendReportModel model, ReportTheme theme = null)
         {
+            var t = theme ?? ReportTheme.Get("Синяя");
             var list = new List<ChartImage>();
             if (model == null || model.DateLabels == null || model.DateLabels.Count == 0)
                 return list;
 
-            TryAdd(list, () => LineTotals(model, obr: true));
-            TryAdd(list, () => LineTotals(model, obr: false));
-            TryAdd(list, () => GroupedTotals(model));
-            TryAdd(list, () => TopResponsibles(model));
-            TryAdd(list, () => PieShareResponsibles(model));
-            TryAdd(list, () => PieObrVsNar(model));
+            TryAdd(list, () => LineTotals(model, obr: true, t));
+            TryAdd(list, () => LineTotals(model, obr: false, t));
+            TryAdd(list, () => GroupedTotals(model, t));
+            TryAdd(list, () => TopResponsibles(model, t));
+            TryAdd(list, () => PieShareResponsibles(model, t));
+            TryAdd(list, () => PieObrVsNar(model, t));
             return list;
         }
 
@@ -50,27 +47,26 @@ namespace ObrasReport.Core
             catch { /* best-effort */ }
         }
 
-        private static ChartImage LineTotals(TrendReportModel model, bool obr)
+        private static ChartImage LineTotals(TrendReportModel model, bool obr, ReportTheme t)
         {
             var values = obr ? model.TotalObrClosed : model.TotalNarClosed;
             string title = obr
                 ? "Решено обращений по периодам"
                 : "Решено нарядов по периодам";
-            var color = obr ? BrandBlue : Green;
+            var color = obr ? ColorTranslator.FromHtml(t.Brand) : ColorTranslator.FromHtml(t.GreenBright);
 
             double[] xs = Enumerable.Range(0, values.Count).Select(i => (double)i).ToArray();
             double[] ys = values.Select(v => (double)v).ToArray();
             double yMax = ys.Length == 0 ? 1 : Math.Max(ys.Max(), 1);
             double topPad = Math.Max(yMax * 0.22, 2);
 
-            var plt = NewPlot(title);
+            var plt = NewPlot(title, t);
             plt.AddScatter(xs, ys, color: color, lineWidth: 2.5f, markerSize: 9);
 
-            // подписи чуть выше точек, чтобы не пересекались с линией и заголовком
             for (int i = 0; i < ys.Length; i++)
             {
-                var t = plt.AddText(ys[i].ToString("0"), xs[i], ys[i] + topPad * 0.35, size: 11, color: color);
-                t.Alignment = Alignment.LowerCenter;
+                var txt = plt.AddText(ys[i].ToString("0"), xs[i], ys[i] + topPad * 0.35, size: 11, color: color);
+                txt.Alignment = Alignment.LowerCenter;
             }
 
             plt.XTicks(xs, model.DateLabels.ToArray());
@@ -81,7 +77,7 @@ namespace ObrasReport.Core
             return ToImage(title, plt);
         }
 
-        private static ChartImage GroupedTotals(TrendReportModel model)
+        private static ChartImage GroupedTotals(TrendReportModel model, ReportTheme t)
         {
             const string title = "Обращения и наряды по периодам";
             double[] obr = model.TotalObrClosed.Select(v => (double)v).ToArray();
@@ -89,14 +85,14 @@ namespace ObrasReport.Core
             double yMax = Math.Max(obr.DefaultIfEmpty(0).Max(), nar.DefaultIfEmpty(0).Max());
             yMax = Math.Max(yMax, 1);
 
-            var plt = NewPlot(title);
+            var plt = NewPlot(title, t);
             string[] seriesLabels = { "Обращения", "Наряды" };
             double[][] series = { obr, nar };
             var bars = plt.AddBarGroups(model.DateLabels.ToArray(), seriesLabels, series, null);
             if (bars != null)
             {
-                if (bars.Length >= 1) bars[0].FillColor = BrandBlue;
-                if (bars.Length >= 2) bars[1].FillColor = Green;
+                if (bars.Length >= 1) bars[0].FillColor = ColorTranslator.FromHtml(t.Brand);
+                if (bars.Length >= 2) bars[1].FillColor = ColorTranslator.FromHtml(t.GreenBright);
                 foreach (var b in bars)
                 {
                     b.BorderColor = Color.Transparent;
@@ -107,14 +103,13 @@ namespace ObrasReport.Core
 
             plt.Legend(location: Alignment.UpperLeft);
             plt.YLabel("Закрыто");
-            // запас сверху под цифры над столбцами + легенду
             plt.SetAxisLimits(yMin: 0, yMax: yMax * 1.35);
             ApplyCartesianLayout(plt, right: 30, top: 70);
 
             return ToImage(title, plt);
         }
 
-        private static ChartImage TopResponsibles(TrendReportModel model)
+        private static ChartImage TopResponsibles(TrendReportModel model, ReportTheme t)
         {
             const string title = "Топ‑10 ответственных (закрытые обращения)";
             int last = model.DateLabels.Count - 1;
@@ -134,29 +129,30 @@ namespace ObrasReport.Core
                 .ToList();
 
             if (top.Count == 0)
-                return ToImage(title, NewPlot(title + " — нет данных"));
+                return ToImage(title, NewPlot(title + " — нет данных", t));
 
-            double[] values = top.Select(t => (double)t.Closed).ToArray();
+            double[] values = top.Select(t2 => (double)t2.Closed).ToArray();
             double[] positions = Enumerable.Range(0, top.Count).Select(i => (double)i).ToArray();
-            // короткие подписи оси — дельта только в подписи значения
-            string[] labels = top.Select(t => t.Name).ToArray();
+            string[] labels = top.Select(t2 => t2.Name).ToArray();
             double xMax = Math.Max(values.DefaultIfEmpty(0).Max(), 1);
 
-            var plt = NewPlot(title);
+            var brand = ColorTranslator.FromHtml(t.Brand);
+            var accent = ColorTranslator.FromHtml(t.Accent);
+            var plt = NewPlot(title, t);
             plt.XLabel("Период: " + lastLabel + "   ·   Закрыто обращений");
 
             var bar = plt.AddBar(values, positions);
             bar.Orientation = Orientation.Horizontal;
-            bar.FillColor = Accent;
-            bar.BorderColor = BrandBlue;
+            bar.FillColor = accent;
+            bar.BorderColor = brand;
             bar.ShowValuesAboveBars = false;
 
             for (int i = 0; i < values.Length; i++)
             {
                 string d = top[i].Delta > 0 ? $"+{top[i].Delta}" : top[i].Delta.ToString();
                 string caption = $"{values[i]:0} ({d})";
-                var t = plt.AddText(caption, values[i] + xMax * 0.02, positions[i], size: 10, color: BrandBlue);
-                t.Alignment = Alignment.MiddleLeft;
+                var txt = plt.AddText(caption, values[i] + xMax * 0.02, positions[i], size: 10, color: brand);
+                txt.Alignment = Alignment.MiddleLeft;
             }
 
             plt.YTicks(positions, labels);
@@ -167,7 +163,7 @@ namespace ObrasReport.Core
             return ToImage(title, plt);
         }
 
-        private static ChartImage PieShareResponsibles(TrendReportModel model)
+        private static ChartImage PieShareResponsibles(TrendReportModel model, ReportTheme t)
         {
             int last = model.DateLabels.Count - 1;
             string lastLabel = model.DateLabels[last];
@@ -180,13 +176,13 @@ namespace ObrasReport.Core
                 .ToList();
 
             if (ranked.Count == 0)
-                return ToImage(title, NewPlot(title + " — нет данных"));
+                return ToImage(title, NewPlot(title + " — нет данных", t));
 
             const int topN = 8;
             var top = ranked.Take(topN).ToList();
             int other = ranked.Skip(topN).Sum(x => x.Closed);
-            var valuesList = top.Select(t => (double)t.Closed).ToList();
-            var namesList = top.Select(t => t.Name).ToList();
+            var valuesList = top.Select(t2 => (double)t2.Closed).ToList();
+            var namesList = top.Select(t2 => t2.Name).ToList();
             if (other > 0)
             {
                 valuesList.Add(other);
@@ -195,12 +191,11 @@ namespace ObrasReport.Core
 
             double total = valuesList.Sum();
             double[] values = valuesList.ToArray();
-            // подписи только в легенде — не на секторах (иначе наезжают друг на друга)
             string[] legend = namesList
                 .Select((n, i) => $"{n} — {values[i]:0} ({Pct(values[i], total)})")
                 .ToArray();
 
-            var plt = NewPiePlot(title, "Период: " + lastLabel);
+            var plt = NewPiePlot(title, "Период: " + lastLabel, t);
             var pie = plt.AddPie(values);
             pie.ShowLabels = false;
             pie.ShowPercentages = false;
@@ -213,7 +208,7 @@ namespace ObrasReport.Core
             return ToImage(title, plt);
         }
 
-        private static ChartImage PieObrVsNar(TrendReportModel model)
+        private static ChartImage PieObrVsNar(TrendReportModel model, ReportTheme t)
         {
             int last = model.DateLabels.Count - 1;
             string lastLabel = model.DateLabels[last];
@@ -222,7 +217,7 @@ namespace ObrasReport.Core
             double obr = model.TotalObrClosed[last];
             double nar = model.TotalNarClosed[last];
             if (obr <= 0 && nar <= 0)
-                return ToImage(title, NewPlot(title + " — нет данных"));
+                return ToImage(title, NewPlot(title + " — нет данных", t));
 
             double[] values = { Math.Max(obr, 0), Math.Max(nar, 0) };
             double total = values.Sum();
@@ -232,7 +227,9 @@ namespace ObrasReport.Core
                 $"Наряды — {values[1]:0} ({Pct(values[1], total)})"
             };
 
-            var plt = NewPiePlot(title, "Период: " + lastLabel + "   ·   Итого: " + total.ToString("0"));
+            var brand = ColorTranslator.FromHtml(t.Brand);
+            var green = ColorTranslator.FromHtml(t.GreenBright);
+            var plt = NewPiePlot(title, "Период: " + lastLabel + "   ·   Итого: " + total.ToString("0"), t);
             var pie = plt.AddPie(values);
             pie.ShowLabels = false;
             pie.ShowPercentages = false;
@@ -242,8 +239,8 @@ namespace ObrasReport.Core
             pie.DonutLabel = total.ToString("0");
             pie.CenterFont.Size = 16;
             pie.CenterFont.Bold = true;
-            pie.CenterFont.Color = BrandBlue;
-            pie.SliceFillColors = new[] { BrandBlue, Green };
+            pie.CenterFont.Color = brand;
+            pie.SliceFillColors = new[] { brand, green };
             pie.LegendLabels = legend;
             plt.Legend(true, Alignment.MiddleRight);
             ApplyPieLayout(plt);
@@ -254,19 +251,21 @@ namespace ObrasReport.Core
         private static string Pct(double part, double total) =>
             total <= 0 ? "0%" : (part / total * 100).ToString("0") + "%";
 
-        private static Plot NewPlot(string title)
+        private static Plot NewPlot(string title, ReportTheme t)
         {
+            var brand = ColorTranslator.FromHtml(t.Brand);
             var plt = new Plot(Width, Height);
-            plt.Title(title, size: 15, color: BrandBlue, bold: true);
+            plt.Title(title, size: 15, color: brand, bold: true);
             plt.Style(figureBackground: Color.White, dataBackground: Color.FromArgb(247, 250, 252));
             plt.Grid(color: Color.FromArgb(220, 227, 234));
             return plt;
         }
 
-        private static Plot NewPiePlot(string title, string subtitle)
+        private static Plot NewPiePlot(string title, string subtitle, ReportTheme t)
         {
+            var brand = ColorTranslator.FromHtml(t.Brand);
             var plt = new Plot(Width, Height);
-            plt.Title(title, size: 15, color: BrandBlue, bold: true);
+            plt.Title(title, size: 15, color: brand, bold: true);
             plt.XLabel(subtitle);
             plt.Style(figureBackground: Color.White, dataBackground: Color.White);
             plt.Grid(enable: false);
@@ -284,7 +283,6 @@ namespace ObrasReport.Core
 
         private static void ApplyPieLayout(Plot plt)
         {
-            // место справа под легенду, сверху под заголовок, снизу под подпись периода
             plt.Layout(left: 40, right: 320, bottom: 50, top: 55);
         }
 

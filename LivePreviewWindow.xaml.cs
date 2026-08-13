@@ -14,12 +14,17 @@ namespace ObrasReport
 {
     /// <summary>
     /// Живой предпросмотр отчёта: таблица (DataGrid), графики и статистика.
-    /// Пользователь выбирает тему и состав отчёта; результат читается
-    /// из публичных свойств после закрытия окна (DialogResult == true).
+    /// Поддерживает три типа: Обращения (ReportModel), Универсальное (UniversalReportModel),
+    /// Динамика (TrendReportModel).
     /// </summary>
     public partial class LivePreviewWindow : Window
     {
-        private readonly ReportModel _model;
+        private enum PreviewKind { Obrasheniya, Universal, Trend }
+
+        private readonly PreviewKind _kind;
+        private readonly ReportModel _obrModel;
+        private readonly UniversalReportModel _univModel;
+        private readonly TrendReportModel _trendModel;
         private readonly List<ChartImage> _charts;
         private readonly string _subtitle;
         private readonly string _heading;
@@ -32,8 +37,8 @@ namespace ObrasReport
 
         private sealed class ChartViewItem
         {
-            public string Title;
-            public ImageSource Image;
+            public string Title { get; set; }
+            public ImageSource Image { get; set; }
         }
 
         // ---- результаты выбора пользователя ----
@@ -42,16 +47,52 @@ namespace ObrasReport
         public bool CommentsEnabled => ShowCommentsCb.IsChecked == true;
         public string SelectedTheme => (ThemeCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "Синяя";
 
+        // ---------- конструкторы для каждого типа ----------
+
         public LivePreviewWindow(ReportModel model, List<ChartImage> charts, string subtitle,
             string heading, string theme = "Синяя")
+            : this(PreviewKind.Obrasheniya, model, null, null, charts, subtitle, heading, theme)
+        {
+        }
+
+        public LivePreviewWindow(UniversalReportModel model, string subtitle,
+            string heading, string theme = "Синяя")
+            : this(PreviewKind.Universal, null, model, null, null, subtitle, heading, theme)
+        {
+        }
+
+        public LivePreviewWindow(TrendReportModel model, List<ChartImage> charts, string subtitle,
+            string heading, string theme = "Синяя")
+            : this(PreviewKind.Trend, null, null, model, charts, subtitle, heading, theme)
+        {
+        }
+
+        private LivePreviewWindow(PreviewKind kind, ReportModel obr, UniversalReportModel univ,
+            TrendReportModel trend, List<ChartImage> charts, string subtitle, string heading, string theme)
         {
             InitializeComponent();
-            _model = model;
+            _kind = kind;
+            _obrModel = obr;
+            _univModel = univ;
+            _trendModel = trend;
             _charts = charts ?? new List<ChartImage>();
             _subtitle = subtitle;
             _heading = heading;
 
             ThemeCombo.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "Синяя", "Зелёная", "Графит", "Светлая" }, theme));
+
+            // чекбокс «Комментарии» имеет смысл только для обращений
+            if (_kind != PreviewKind.Obrasheniya)
+            {
+                ShowCommentsCb.Visibility = Visibility.Collapsed;
+            }
+
+            // чекбокс «Графики» — скрываем если графиков нет
+            if (_charts.Count == 0)
+            {
+                ShowChartsCb.Visibility = Visibility.Collapsed;
+            }
+
             BuildChartToggles();
             Render();
         }
@@ -92,22 +133,31 @@ namespace ObrasReport
             UpdateInfo();
         }
 
+        // ---------- таблица ----------
         private void RenderTable()
         {
-            var headers = BuildHeaders();
-            TablePreview.Columns.Clear();
-            foreach (var h in headers)
+            switch (_kind)
             {
-                TablePreview.Columns.Add(new DataGridTextColumn
-                {
-                    Header = h,
-                    Binding = new System.Windows.Data.Binding(SafeKey(h)),
-                    Width = new DataGridLength(h.Length > 25 ? 200 : 140)
-                });
+                case PreviewKind.Obrasheniya: RenderObrTable(); break;
+                case PreviewKind.Universal:   RenderUnivTable(); break;
+                case PreviewKind.Trend:       RenderTrendTable(); break;
+            }
+            ApplyTheme(SelectedTheme);
+        }
+
+        private void RenderObrTable()
+        {
+            var headers = BuildObrHeaders();
+            TablePreview.Columns.Clear();
+            bool showComments = ShowCommentsCb.IsChecked == true;
+            for (int i = 0; i < headers.Count; i++)
+            {
+                if (i == headers.Count - 1 && !showComments) continue;
+                AddColumn(headers[i]);
             }
 
             var items = new System.Collections.ObjectModel.ObservableCollection<Dictionary<string, object>>();
-            foreach (var row in _model.Rows)
+            foreach (var row in _obrModel.Rows)
             {
                 var dict = new Dictionary<string, object>();
                 int idx = 0;
@@ -115,7 +165,7 @@ namespace ObrasReport
                 AddCell(dict, headers[idx++], row.Number);
                 AddCell(dict, headers[idx++], row.Responsible);
 
-                if (_model.Layout == LayoutType.Repairs)
+                if (_obrModel.Layout == LayoutType.Repairs)
                 {
                     AddCell(dict, headers[idx++], row.ObjectName);
                     AddCell(dict, headers[idx++], row.Classifier);
@@ -125,7 +175,7 @@ namespace ObrasReport
                 else
                 {
                     AddCell(dict, headers[idx++], row.ObjectName);
-                    if (_model.HasService) AddCell(dict, headers[idx++], row.Service);
+                    if (_obrModel.HasService) AddCell(dict, headers[idx++], row.Service);
                 }
                 foreach (var st in row.StatusByDate) AddCell(dict, headers[idx++], st);
                 AddCell(dict, headers[idx++], row.Itog);
@@ -133,21 +183,91 @@ namespace ObrasReport
                 items.Add(dict);
             }
             TablePreview.ItemsSource = items;
-            ApplyTheme(SelectedTheme);
         }
 
-        private static string SafeKey(string header) =>
-            header.Replace(" ", "_").Replace("/", "_").Replace("№", "N").Replace("(", "").Replace(")", "");
-
-        private static void AddCell(Dictionary<string, object> dict, string header, object value)
+        private void RenderUnivTable()
         {
-            dict[SafeKey(header)] = value ?? "";
+            bool tracked = !string.IsNullOrEmpty(_univModel.TrackedHeader);
+            var headers = new List<string> { "№ п/п", _univModel.KeyHeader };
+            headers.AddRange(_univModel.DisplayHeaders);
+            if (tracked)
+                foreach (var d in _univModel.DateLabels) headers.Add(_univModel.TrackedHeader + " " + d);
+            headers.Add("Итог");
+
+            TablePreview.Columns.Clear();
+            foreach (var h in headers) AddColumn(h);
+
+            var items = new System.Collections.ObjectModel.ObservableCollection<Dictionary<string, object>>();
+            foreach (var row in _univModel.Rows)
+            {
+                var dict = new Dictionary<string, object>();
+                int idx = 0;
+                AddCell(dict, headers[idx++], row.Index);
+                AddCell(dict, headers[idx++], row.Key);
+                foreach (var dv in row.DisplayValues) AddCell(dict, headers[idx++], dv);
+                if (tracked) foreach (var tv in row.TrackedByDate) AddCell(dict, headers[idx++], tv);
+                AddCell(dict, headers[idx++], row.Itog);
+                items.Add(dict);
+            }
+            TablePreview.ItemsSource = items;
         }
 
-        private List<string> BuildHeaders()
+        private void RenderTrendTable()
+        {
+            int n = _trendModel.DateLabels.Count;
+            var headers = new List<string> { "№", "Ответственный" };
+            for (int i = 0; i < n; i++) headers.Add("Обр. " + _trendModel.DateLabels[i]);
+            headers.Add("Тренд обр.");
+            for (int i = 0; i < n; i++) headers.Add("Нар. " + _trendModel.DateLabels[i]);
+            headers.Add("Тренд нар.");
+
+            TablePreview.Columns.Clear();
+            foreach (var h in headers) AddColumn(h);
+
+            var items = new System.Collections.ObjectModel.ObservableCollection<Dictionary<string, object>>();
+            foreach (var row in _trendModel.Rows)
+            {
+                var dict = new Dictionary<string, object>();
+                int idx = 0;
+                AddCell(dict, headers[idx++], row.Index);
+                AddCell(dict, headers[idx++], row.Responsible);
+                for (int i = 0; i < n; i++) AddCell(dict, headers[idx++], row.ObrClosed[i]);
+                AddCell(dict, headers[idx++], FormatDelta(row.ObrDelta));
+                for (int i = 0; i < n; i++) AddCell(dict, headers[idx++], row.NarClosed[i]);
+                AddCell(dict, headers[idx++], FormatDelta(row.NarDelta));
+                items.Add(dict);
+            }
+
+            // строка ИТОГО
+            {
+                var dict = new Dictionary<string, object>();
+                int idx = 0;
+                AddCell(dict, headers[idx++], "");
+                AddCell(dict, headers[idx++], "ИТОГО");
+                for (int i = 0; i < n; i++) AddCell(dict, headers[idx++], _trendModel.TotalObrClosed[i]);
+                AddCell(dict, headers[idx++], FormatDelta(_trendModel.TotalObrDelta));
+                for (int i = 0; i < n; i++) AddCell(dict, headers[idx++], _trendModel.TotalNarClosed[i]);
+                AddCell(dict, headers[idx++], FormatDelta(_trendModel.TotalNarDelta));
+                items.Add(dict);
+            }
+            TablePreview.ItemsSource = items;
+        }
+
+        private void AddColumn(string header)
+        {
+            string key = SafeKey(header);
+            TablePreview.Columns.Add(new DataGridTextColumn
+            {
+                Header = header,
+                Binding = new System.Windows.Data.Binding($"[{key}]"),
+                Width = new DataGridLength(header.Length > 25 ? 200 : 140)
+            });
+        }
+
+        private List<string> BuildObrHeaders()
         {
             var headers = new List<string> { "№ п/п", "№ обращения", "Ответственный" };
-            if (_model.Layout == LayoutType.Repairs)
+            if (_obrModel.Layout == LayoutType.Repairs)
             {
                 headers.Add("Филиал");
                 headers.Add("Классификатор");
@@ -157,15 +277,28 @@ namespace ObrasReport
             else
             {
                 headers.Add("Объект (клиент)");
-                if (_model.HasService) headers.Add("Услуга");
+                if (_obrModel.HasService) headers.Add("Услуга");
             }
-            foreach (var s in _model.Snapshots)
-                headers.Add((_model.Layout == LayoutType.Repairs ? "Состояние " : "Статус ") + s.Label);
+            foreach (var s in _obrModel.Snapshots)
+                headers.Add((_obrModel.Layout == LayoutType.Repairs ? "Состояние " : "Статус ") + s.Label);
             headers.Add("Итог");
             headers.Add("Комментарий");
             return headers;
         }
 
+        private static string SafeKey(string header) =>
+            header.Replace(" ", "_").Replace("/", "_").Replace("№", "N").Replace("(", "").Replace(")", "")
+                  .Replace(".", "_").Replace(",", "_").Replace("-", "_");
+
+        private static void AddCell(Dictionary<string, object> dict, string header, object value)
+        {
+            dict[SafeKey(header)] = value ?? "";
+        }
+
+        private static string FormatDelta(int delta) =>
+            delta > 0 ? "+" + delta : delta.ToString();
+
+        // ---------- графики ----------
         private void RenderCharts()
         {
             var visible = _charts
@@ -182,41 +315,116 @@ namespace ObrasReport
             }).ToList();
         }
 
+        // ---------- статистика ----------
         private void RenderStats()
+        {
+            switch (_kind)
+            {
+                case PreviewKind.Obrasheniya: RenderObrStats(); break;
+                case PreviewKind.Universal:   RenderUnivStats(); break;
+                case PreviewKind.Trend:       RenderTrendStats(); break;
+            }
+        }
+
+        private void RenderObrStats()
         {
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("ОБЩАЯ СТАТИСТИКА И ДИНАМИКА");
             sb.AppendLine(new string('=', 46));
             sb.AppendLine();
-            sb.AppendLine($"Всего обращений: {_model.Rows.Count}");
-            sb.AppendLine($"Обработано (итог): {_model.ProcessedTotal}");
-            sb.AppendLine($"На контроле исполнения (итог): {_model.OnControlTotal}");
-            if (_model.Layout == LayoutType.Repairs)
-                sb.AppendLine($"  из них во внешних состояниях: {_model.OnControlExternal}");
+            sb.AppendLine($"Всего обращений: {_obrModel.Rows.Count}");
+            sb.AppendLine($"Обработано (итог): {_obrModel.ProcessedTotal}");
+            sb.AppendLine($"На контроле исполнения (итог): {_obrModel.OnControlTotal}");
+            if (_obrModel.Layout == LayoutType.Repairs)
+                sb.AppendLine($"  из них во внешних состояниях: {_obrModel.OnControlExternal}");
             sb.AppendLine();
             sb.AppendLine("ДИНАМИКА МЕЖДУ ВЫГРУЗКАМИ:");
-            for (int i = 0; i < _model.Snapshots.Count - 1; i++)
+            for (int i = 0; i < _obrModel.Snapshots.Count - 1; i++)
             {
-                string a = _model.Snapshots[i].Label, b = _model.Snapshots[i + 1].Label;
-                sb.AppendLine($"  {a} → {b}: снято {_model.LeftCounts[i]}, новых {_model.NewCounts[i]}" +
-                    (_model.Layout == LayoutType.Repairs ? $", изменили состояние {_model.ChangedCounts[i]}" : ""));
+                string a = _obrModel.Snapshots[i].Label, b = _obrModel.Snapshots[i + 1].Label;
+                sb.AppendLine($"  {a} → {b}: снято {_obrModel.LeftCounts[i]}, новых {_obrModel.NewCounts[i]}" +
+                    (_obrModel.Layout == LayoutType.Repairs ? $", изменили состояние {_obrModel.ChangedCounts[i]}" : ""));
             }
-            sb.AppendLine($"  Всего снято: {_model.LeftCounts.Sum()}; новых: {_model.NewCounts.Sum()}" +
-                (_model.Layout == LayoutType.Repairs ? $"; изменений: {_model.ChangedCounts.Sum()}" : ""));
-            if (!string.IsNullOrWhiteSpace(_model.Description))
+            sb.AppendLine($"  Всего снято: {_obrModel.LeftCounts.Sum()}; новых: {_obrModel.NewCounts.Sum()}" +
+                (_obrModel.Layout == LayoutType.Repairs ? $"; изменений: {_obrModel.ChangedCounts.Sum()}" : ""));
+            if (!string.IsNullOrWhiteSpace(_obrModel.Description))
             {
                 sb.AppendLine();
                 sb.AppendLine("ОПИСАНИЕ ОТЧЁТА:");
-                sb.AppendLine(_model.Description);
+                sb.AppendLine(_obrModel.Description);
+            }
+            StatsPreview.Text = sb.ToString();
+        }
+
+        private void RenderUnivStats()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("ИТОГИ СРАВНЕНИЯ");
+            sb.AppendLine(new string('=', 46));
+            sb.AppendLine();
+            sb.AppendLine($"Всего уникальных значений ключа: {_univModel.Rows.Count}");
+            sb.AppendLine($"  Добавлено: {_univModel.Added}");
+            sb.AppendLine($"  Удалено: {_univModel.Removed}");
+            sb.AppendLine($"  Изменено: {_univModel.Changed}");
+            sb.AppendLine($"  Без изменений: {_univModel.Same}");
+            sb.AppendLine();
+            sb.AppendLine($"Ключевой столбец: {_univModel.KeyHeader}");
+            if (!string.IsNullOrEmpty(_univModel.TrackedHeader))
+                sb.AppendLine($"Отслеживаемый столбец: {_univModel.TrackedHeader}");
+            sb.AppendLine($"Сравниваемые даты: {string.Join(", ", _univModel.DateLabels)}");
+            if (!string.IsNullOrWhiteSpace(_univModel.Description))
+            {
+                sb.AppendLine();
+                sb.AppendLine("ОПИСАНИЕ ОТЧЁТА:");
+                sb.AppendLine(_univModel.Description);
+            }
+            StatsPreview.Text = sb.ToString();
+        }
+
+        private void RenderTrendStats()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("ИТОГИ ДИНАМИКИ");
+            sb.AppendLine(new string('=', 46));
+            sb.AppendLine();
+            for (int i = 0; i < _trendModel.DateLabels.Count; i++)
+                sb.AppendLine($"{_trendModel.DateLabels[i]}: решено обращений {_trendModel.TotalObrClosed[i]}, " +
+                              $"решено нарядов {_trendModel.TotalNarClosed[i]}");
+            sb.AppendLine();
+            sb.AppendLine($"Тренд обращений (последний − первый): {FormatDelta(_trendModel.TotalObrDelta)}");
+            sb.AppendLine($"Тренд нарядов (последний − первый): {FormatDelta(_trendModel.TotalNarDelta)}");
+            sb.AppendLine($"Ответственных в отчёте: {_trendModel.Rows.Count}");
+            if (!string.IsNullOrWhiteSpace(_trendModel.Description))
+            {
+                sb.AppendLine();
+                sb.AppendLine("ОПИСАНИЕ ОТЧЁТА:");
+                sb.AppendLine(_trendModel.Description);
             }
             StatsPreview.Text = sb.ToString();
         }
 
         private void UpdateInfo()
         {
-            PreviewInfo.Text = $"Категория: {_heading}\n{_subtitle}\n\n" +
-                               $"Обращений: {_model.Rows.Count} · Обработано: {_model.ProcessedTotal} · " +
-                               $"На контроле: {_model.OnControlTotal}\nГрафиков: {_charts.Count}";
+            string detail;
+            switch (_kind)
+            {
+                case PreviewKind.Obrasheniya:
+                    detail = $"Обращений: {_obrModel.Rows.Count} · Обработано: {_obrModel.ProcessedTotal} · " +
+                             $"На контроле: {_obrModel.OnControlTotal}";
+                    break;
+                case PreviewKind.Universal:
+                    detail = $"Строк: {_univModel.Rows.Count} · Добавлено: {_univModel.Added} · " +
+                             $"Удалено: {_univModel.Removed} · Изменено: {_univModel.Changed}";
+                    break;
+                case PreviewKind.Trend:
+                    detail = $"Ответственных: {_trendModel.Rows.Count} · Периодов: {_trendModel.DateLabels.Count} · " +
+                             $"Тренд обр.: {FormatDelta(_trendModel.TotalObrDelta)}";
+                    break;
+                default:
+                    detail = "";
+                    break;
+            }
+            PreviewInfo.Text = $"{_heading}\n{_subtitle}\n\n{detail}\nГрафиков: {_charts.Count}";
         }
 
         // ---------- тема ----------
@@ -251,6 +459,23 @@ namespace ObrasReport
 
         private void Option_Changed(object sender, RoutedEventArgs e)
         {
+            // событие может прийти во время InitializeComponent, когда элементы ещё не готовы
+            if (!IsLoaded || PreviewTabs == null) return;
+
+            // видимость вкладок
+            foreach (var item in PreviewTabs.Items.OfType<TabItem>())
+            {
+                string header = item.Header as string;
+                if (header == "Графики")
+                    item.Visibility = ShowChartsCb.IsChecked == true && _charts.Count > 0
+                        ? Visibility.Visible : Visibility.Collapsed;
+                else if (header == "Статистика")
+                    item.Visibility = ShowStatsCb.IsChecked == true
+                        ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            // перестроить таблицу (колонка «Комментарий» зависит от чекбокса)
+            RenderTable();
             UpdateInfo();
         }
 
