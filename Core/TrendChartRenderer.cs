@@ -11,6 +11,7 @@ namespace ObrasReport.Core
     public class ChartImage
     {
         public string Title;
+        public string Description;
         public byte[] Png;
     }
 
@@ -201,11 +202,14 @@ namespace ObrasReport.Core
             pie.ShowPercentages = false;
             pie.ShowValues = false;
             pie.Size = 0.55;
+            pie.SliceLabels = legend;
             pie.LegendLabels = legend;
             plt.Legend(true, Alignment.MiddleRight);
             ApplyPieLayout(plt);
 
-            return ToImage(title, plt);
+            string description = string.Join(" · ", legend) +
+                ". Процент показывает долю закрытых обращений ответственного среди всех закрытых обращений за период.";
+            return ToImage(title, plt, description);
         }
 
         private static ChartImage PieObrVsNar(TrendReportModel model, ReportTheme t)
@@ -241,11 +245,16 @@ namespace ObrasReport.Core
             pie.CenterFont.Bold = true;
             pie.CenterFont.Color = brand;
             pie.SliceFillColors = new[] { brand, green };
+            pie.SliceLabels = legend;
             pie.LegendLabels = legend;
             plt.Legend(true, Alignment.MiddleRight);
             ApplyPieLayout(plt);
 
-            return ToImage(title, plt);
+            string description =
+                $"Закрытые обращения — {obr:0} ({Pct(obr, total)}) · " +
+                $"закрытые наряды — {nar:0} ({Pct(nar, total)}). " +
+                "Проценты показывают соотношение закрытых обращений и нарядов за последний период.";
+            return ToImage(title, plt, description);
         }
 
         private static string Pct(double part, double total) =>
@@ -286,10 +295,10 @@ namespace ObrasReport.Core
             plt.Layout(left: 40, right: 320, bottom: 50, top: 55);
         }
 
-        private static ChartImage ToImage(string title, Plot plt)
+        private static ChartImage ToImage(string title, Plot plt, string description = null)
         {
             byte[] png = plt.GetImageBytes(lowQuality: false, scale: 1);
-            return new ChartImage { Title = title, Png = png };
+            return new ChartImage { Title = title, Description = description, Png = png };
         }
 
         private static string Truncate(string s, int max)

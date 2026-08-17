@@ -156,6 +156,8 @@ namespace ObrasReport.Core
             for (int i = 0; i < model.DateLabels.Count; i++)
                 lines.Add($"{model.DateLabels[i]}: решено обращений {model.TotalObrClosed[i]}, решено нарядов {model.TotalNarClosed[i]}");
             lines.Add("");
+            lines.Add("Закрытые обращения и наряды — значения счётчиков «(ЗАКРЫТО)» из исходных выгрузок.");
+            lines.Add("");
             lines.Add($"Тренд обращений (последний − первый): {(model.TotalObrDelta > 0 ? "+" : "")}{model.TotalObrDelta}");
             lines.Add($"Тренд нарядов (последний − первый): {(model.TotalNarDelta > 0 ? "+" : "")}{model.TotalNarDelta}");
             lines.Add($"Ответственных в отчёте: {model.Rows.Count}");

@@ -125,6 +125,12 @@ namespace ObrasReport.Core
                 Tuple.Create($"• Изменено: {model.Changed}", false),
                 Tuple.Create($"• Без изменений: {model.Same}", false),
                 Tuple.Create("", false),
+                Tuple.Create("Что означают итоги:", true),
+                Tuple.Create("• Добавлено — строка появилась после первой выгрузки и есть в последней.", false),
+                Tuple.Create("• Удалено — строки нет в последней выгрузке.", false),
+                Tuple.Create("• Изменено — изменилось значение отслеживаемого или выбранного столбца.", false),
+                Tuple.Create("• Без изменений — строка есть в первой и последней выгрузках без изменений.", false),
+                Tuple.Create("", false),
                 Tuple.Create($"Ключевой столбец: {model.KeyHeader}", false),
             };
             if (!string.IsNullOrEmpty(model.TrackedHeader))

@@ -145,6 +145,7 @@ namespace ObrasReport.Models
         public string Itog;      // «Обработано» / «На контроле исполнения»
         public string Comment;
         public bool Processed;   // для подсветки
+        public bool Closed;      // обращение отсутствует в последней выгрузке
     }
 
     /// <summary>Статистика по одной дате.</summary>
@@ -168,6 +169,7 @@ namespace ObrasReport.Models
 
         // сводные показатели
         public int ProcessedTotal;
+        public int ClosedTotal;          // отсутствуют в последней выгрузке
         public int OnControlTotal;
         public int OnControlExternal;   // из них во «внешних» состояниях (ремонты)
 

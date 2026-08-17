@@ -31,6 +31,9 @@ namespace ObrasReport.Core
             if (model.Layout == LayoutType.Repairs)
                 TryAdd(list, () => PieSeverityLast(model, t));
             TryAdd(list, () => TopOnControl(model, t));
+            TryAdd(list, () => TopClosed(model, t));
+            TryAdd(list, () => AllOnControl(model, t));
+            TryAdd(list, () => AllClosed(model, t));
             return list;
         }
 
@@ -123,8 +126,8 @@ namespace ObrasReport.Core
                 : null;
 
             string[] seriesLabels = repairs
-                ? new[] { "Снято с контроля", "Новые", "Изменили состояние" }
-                : new[] { "Снято с контроля", "Новые" };
+                ? new[] { "Закрытые", "Новые", "Изменили состояние" }
+                : new[] { "Закрытые", "Новые" };
             double[][] series = repairs
                 ? new[] { left, neu, changed }
                 : new[] { left, neu };
@@ -156,20 +159,33 @@ namespace ObrasReport.Core
 
         private static ChartImage PieItog(ReportModel model, ReportTheme t)
         {
-            string title = T(model, "Итог: обработано и на контроле");
+            string title = T(model, "Итог обращений");
             double done = model.ProcessedTotal;
+            double closed = model.ClosedTotal;
             double ctrl = model.OnControlTotal;
-            if (done <= 0 && ctrl <= 0)
+            if (done <= 0 && closed <= 0 && ctrl <= 0)
                 return ToImage(title, NewPlot(title + " — нет данных", t));
 
             var valuesList = new List<double>();
             var legendList = new List<string>();
-            double total = done + ctrl;
+            var colorList = new List<Color>();
+            double total = done + closed + ctrl;
+            var green = ColorTranslator.FromHtml(t.GreenBright);
+            var amber = ColorTranslator.FromHtml(t.AmberBright);
+            var accent = ColorTranslator.FromHtml(t.Accent);
+            var brand = ColorTranslator.FromHtml(t.Brand);
 
             if (done > 0)
             {
                 valuesList.Add(done);
                 legendList.Add($"Обработано — {done:0} ({Pct(done, total)})");
+                colorList.Add(brand);
+            }
+            if (closed > 0)
+            {
+                valuesList.Add(closed);
+                legendList.Add($"Закрыто — {closed:0} ({Pct(closed, total)})");
+                colorList.Add(green);
             }
             if (ctrl > 0)
             {
@@ -180,20 +196,19 @@ namespace ObrasReport.Core
                     {
                         valuesList.Add(own);
                         legendList.Add($"На контроле — {own:0} ({Pct(own, total)})");
+                        colorList.Add(amber);
                     }
                     valuesList.Add(model.OnControlExternal);
-                    legendList.Add($"На контроле (внешние) — {model.OnControlExternal:0} ({Pct(model.OnControlExternal, total)})");
+                    legendList.Add($"Внешний контроль — {model.OnControlExternal:0} ({Pct(model.OnControlExternal, total)})");
+                    colorList.Add(accent);
                 }
                 else
                 {
                     valuesList.Add(ctrl);
                     legendList.Add($"На контроле — {ctrl:0} ({Pct(ctrl, total)})");
+                    colorList.Add(amber);
                 }
             }
-
-            var green = ColorTranslator.FromHtml(t.GreenBright);
-            var amber = ColorTranslator.FromHtml(t.AmberBright);
-            var accent = ColorTranslator.FromHtml(t.Accent);
 
             var plt = NewPiePlot(title, "Категория: " + Cat(model), t);
             var pie = plt.AddPie(valuesList.ToArray());
@@ -201,18 +216,14 @@ namespace ObrasReport.Core
             pie.ShowPercentages = false;
             pie.ShowValues = false;
             pie.Size = 0.55;
+            // ScottPlot 4 формирует элементы легенды круговой диаграммы из
+            // SliceLabels, даже когда подписи на самих секторах отключены.
+            pie.SliceLabels = legendList.ToArray();
             pie.LegendLabels = legendList.ToArray();
-            if (valuesList.Count >= 2)
-                pie.SliceFillColors = valuesList.Count == 2
-                    ? new[] { green, amber }
-                    : new[] { green, amber, accent };
-            else if (done > 0)
-                pie.SliceFillColors = new[] { green };
-            else
-                pie.SliceFillColors = new[] { amber };
+            pie.SliceFillColors = colorList.ToArray();
             plt.Legend(true, Alignment.MiddleRight);
             ApplyPie(plt);
-            return ToImage(title, plt);
+            return ToImage(title, plt, ItogExplanation(model, total));
         }
 
         private static ChartImage PieSeverityLast(ReportModel model, ReportTheme t)
@@ -235,47 +246,82 @@ namespace ObrasReport.Core
             string[] legend = pairs.Select(p => $"{p.Item1} — {p.Item2:0} ({Pct(p.Item2, total)})").ToArray();
             Color[] colors = pairs.Select(p => p.Item3).ToArray();
 
-            var plt = NewPiePlot(title, "Период: " + last.Label + "   ·   Категория: " + Cat(model), t);
+            var plt = NewPiePlot(title,
+                "Период: " + last.Label + "   ·   Категория: " + Cat(model), t);
             var pie = plt.AddPie(vals);
             pie.ShowLabels = false;
             pie.ShowPercentages = false;
             pie.ShowValues = false;
             pie.Size = 0.55;
             pie.SliceFillColors = colors;
+            pie.SliceLabels = legend;
             pie.LegendLabels = legend;
             plt.Legend(true, Alignment.MiddleRight);
             ApplyPie(plt);
-            return ToImage(title, plt);
+            string description = string.Join(" · ", pairs.Select(p =>
+                $"{p.Item1} — {p.Item2:0} ({Pct(p.Item2, total)})")) +
+                ". Процент показывает долю уровня среди обращений с указанной критичностью.";
+            return ToImage(title, plt, description);
         }
 
         private static ChartImage TopOnControl(ReportModel model, ReportTheme t)
         {
-            string title = T(model, "Топ‑10 ответственных (на контроле)");
-            var top = model.Rows
-                .Where(r => !r.Processed)
+            return ResponsibleRanking(model, t, r => !r.Processed,
+                "Топ‑10 ответственных (на контроле)", "Обращений на контроле", 10,
+                ColorTranslator.FromHtml(t.Accent));
+        }
+
+        private static ChartImage TopClosed(ReportModel model, ReportTheme t)
+        {
+            return ResponsibleRanking(model, t, r => r.Closed,
+                "Топ‑10 ответственных (закрытые обращения)", "Закрытых обращений", 10,
+                ColorTranslator.FromHtml(t.GreenBright));
+        }
+
+        private static ChartImage AllOnControl(ReportModel model, ReportTheme t)
+        {
+            return ResponsibleRanking(model, t, r => !r.Processed,
+                "Рейтинг всех ответственных (на контроле)", "Обращений на контроле", null,
+                ColorTranslator.FromHtml(t.Accent));
+        }
+
+        private static ChartImage AllClosed(ReportModel model, ReportTheme t)
+        {
+            return ResponsibleRanking(model, t, r => r.Closed,
+                "Рейтинг всех ответственных (закрытые обращения)", "Закрытых обращений", null,
+                ColorTranslator.FromHtml(t.GreenBright));
+        }
+
+        private static ChartImage ResponsibleRanking(ReportModel model, ReportTheme t,
+            Func<ReportRow, bool> filter, string name, string metric, int? limit, Color fill)
+        {
+            string title = T(model, name);
+            var ranked = model.Rows
+                .Where(filter)
                 .GroupBy(r => string.IsNullOrWhiteSpace(r.Responsible) ? "—" : r.Responsible.Trim())
-                .Select(g => new { Name = Truncate(g.Key, 24), Count = g.Count() })
+                .Select(g => new { Name = Truncate(g.Key, 32), Count = g.Count() })
                 .OrderByDescending(x => x.Count)
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .Take(10)
-                .Reverse()
                 .ToList();
+            if (limit.HasValue)
+                ranked = ranked.Take(limit.Value).ToList();
+            ranked.Reverse();
 
-            if (top.Count == 0)
-                return ToImage(title, NewPlot(title + " — нет обращений на контроле", t));
+            if (ranked.Count == 0)
+                return ToImage(title, NewPlot(title + " — нет данных", t));
 
-            double[] values = top.Select(t2 => (double)t2.Count).ToArray();
-            double[] positions = Enumerable.Range(0, top.Count).Select(i => (double)i).ToArray();
-            string[] labels = top.Select(t2 => t2.Name).ToArray();
+            double[] values = ranked.Select(x => (double)x.Count).ToArray();
+            double[] positions = Enumerable.Range(0, ranked.Count).Select(i => (double)i).ToArray();
+            string[] labels = ranked.Select(x => x.Name).ToArray();
             double xMax = Math.Max(values.DefaultIfEmpty(0).Max(), 1);
 
             var brand = ColorTranslator.FromHtml(t.Brand);
-            var accent = ColorTranslator.FromHtml(t.Accent);
-            var plt = NewPlot(title, t);
-            plt.XLabel("Категория: " + Cat(model) + "   ·   Обращений на контроле");
+            int height = limit.HasValue ? Height : Math.Max(Height, 175 + ranked.Count * 34);
+            var plt = NewPlot(title, t, height);
+            plt.XLabel("Категория: " + Cat(model) + "   ·   " + metric);
             var bar = plt.AddBar(values, positions);
             bar.Orientation = Orientation.Horizontal;
-            bar.FillColor = accent;
+            bar.FillColor = fill;
             bar.BorderColor = brand;
             bar.ShowValuesAboveBars = false;
             for (int i = 0; i < values.Length; i++)
@@ -284,18 +330,36 @@ namespace ObrasReport.Core
                 txt.Alignment = Alignment.MiddleLeft;
             }
             plt.YTicks(positions, labels);
-            plt.SetAxisLimits(xMin: 0, xMax: xMax * 1.28, yMin: -0.7, yMax: top.Count - 0.3);
-            ApplyCartesian(plt, left: 220, right: 40, bottom: 55, top: 55);
+            plt.SetAxisLimits(xMin: 0, xMax: xMax * 1.28, yMin: -0.7, yMax: ranked.Count - 0.3);
+            ApplyCartesian(plt, left: 270, right: 40, bottom: 55, top: 55);
             return ToImage(title, plt);
         }
 
         private static string Pct(double part, double total) =>
             total <= 0 ? "0%" : (part / total * 100).ToString("0") + "%";
 
-        private static Plot NewPlot(string title, ReportTheme t)
+        private static string ItogExplanation(ReportModel model, double total)
+        {
+            if (model.Layout == LayoutType.Repairs)
+            {
+                string text =
+                    $"Обработано — {model.ProcessedTotal} ({Pct(model.ProcessedTotal, total)}): состояние обращения изменилось. " +
+                    $"Закрыто — {model.ClosedTotal} ({Pct(model.ClosedTotal, total)}): обращения нет в последней выгрузке. " +
+                    $"На контроле исполнения — {model.OnControlTotal} ({Pct(model.OnControlTotal, total)}): обращение остаётся в последней выгрузке без изменения состояния.";
+                if (model.OnControlExternal > 0)
+                    text += $" Из них ожидают действий внешних сторон — {model.OnControlExternal} ({Pct(model.OnControlExternal, total)} от всех обращений).";
+                return text;
+            }
+
+            return
+                $"Закрыто — {model.ClosedTotal} ({Pct(model.ClosedTotal, total)}): обращения нет в последней выгрузке. " +
+                $"На контроле исполнения — {model.OnControlTotal} ({Pct(model.OnControlTotal, total)}): обращение присутствует в последней выгрузке.";
+        }
+
+        private static Plot NewPlot(string title, ReportTheme t, int height = Height)
         {
             var brand = ColorTranslator.FromHtml(t.Brand);
-            var plt = new Plot(Width, Height);
+            var plt = new Plot(Width, height);
             plt.Title(title, size: 14, color: brand, bold: true);
             plt.Style(figureBackground: Color.White, dataBackground: Color.FromArgb(247, 250, 252));
             plt.Grid(color: Color.FromArgb(220, 227, 234));
@@ -323,8 +387,13 @@ namespace ObrasReport.Core
         private static void ApplyPie(Plot plt) =>
             plt.Layout(left: 40, right: 340, bottom: 50, top: 55);
 
-        private static ChartImage ToImage(string title, Plot plt) =>
-            new ChartImage { Title = title, Png = plt.GetImageBytes(lowQuality: false, scale: 1) };
+        private static ChartImage ToImage(string title, Plot plt, string description = null) =>
+            new ChartImage
+            {
+                Title = title,
+                Description = description,
+                Png = plt.GetImageBytes(lowQuality: false, scale: 1)
+            };
 
         private static string Truncate(string s, int max)
         {

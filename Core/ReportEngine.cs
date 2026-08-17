@@ -35,6 +35,7 @@ namespace ObrasReport.Core
         };
 
         private const string ITOG_DONE = ReportConstants.ItogDone;
+        private const string ITOG_CLOSED = ReportConstants.ItogClosed;
         private const string ITOG_CONTROL = ReportConstants.ItogControl;
 
         public static ReportModel Build(IEnumerable<Snapshot> snapshotsInput)
@@ -110,6 +111,7 @@ namespace ObrasReport.Core
                     Severity = string.IsNullOrEmpty(lastRec.Severity) ? "—" : lastRec.Severity,
                     Days = inLast ? lastRec.Days : "",
                     Service = lastRec.Service,
+                    Closed = !inLast,
                     StatusByDate = snaps.Select(s => s.Records.TryGetValue(num, out var r) ? r.Status : "—нет—").ToList(),
                 };
 
@@ -123,7 +125,8 @@ namespace ObrasReport.Core
 
                 model.Rows.Add(row);
 
-                if (row.Processed) model.ProcessedTotal++;
+                if (row.Closed) model.ClosedTotal++;
+                else if (row.Processed) model.ProcessedTotal++;
                 else
                 {
                     model.OnControlTotal++;
@@ -141,8 +144,8 @@ namespace ObrasReport.Core
         {
             if (!inLast)
             {
-                row.Itog = ITOG_DONE; row.Processed = true;
-                row.Comment = "Обращение снято с контроля — ремонт завершён / обращение закрыто по результатам контроля исполнения.";
+                row.Itog = ITOG_CLOSED; row.Processed = true;
+                row.Comment = "Обращение закрыто — отсутствует в последней выгрузке; ремонт завершён / обращение закрыто по результатам контроля исполнения.";
             }
             else if (statusChanged)
             {
@@ -164,8 +167,8 @@ namespace ObrasReport.Core
         {
             if (!inLast)
             {
-                row.Itog = ITOG_DONE; row.Processed = true;
-                row.Comment = "Обращение снято с контроля — обработано ответственным сотрудником по результатам контроля исполнения.";
+                row.Itog = ITOG_CLOSED; row.Processed = true;
+                row.Comment = "Обращение закрыто — отсутствует в последней выгрузке; обработано ответственным сотрудником по результатам контроля исполнения.";
             }
             else
             {

@@ -226,8 +226,10 @@ namespace ObrasReport.Core
 
             Line("");
             Head("Итоги за период:");
-            Line($"• Обработано (итог): {model.ProcessedTotal}");
-            Line($"• На контроле исполнения (итог): {model.OnControlTotal}");
+            if (repairs)
+                Line($"• Обработано — состояние изменилось: {model.ProcessedTotal}");
+            Line($"• Закрыто — отсутствует в последней выгрузке: {model.ClosedTotal}");
+            Line($"• На контроле исполнения — присутствует в последней выгрузке: {model.OnControlTotal}");
             if (repairs)
                 Line($"   – из них в состояниях, движение которых обеспечивают внешние стороны: {model.OnControlExternal}");
             Line("");
@@ -235,10 +237,10 @@ namespace ObrasReport.Core
             for (int i = 0; i < model.Snapshots.Count - 1; i++)
             {
                 string a = model.Snapshots[i].Label, b = model.Snapshots[i + 1].Label;
-                Line($"• {a} → {b}: снято с контроля {model.LeftCounts[i]}, поступило новых {model.NewCounts[i]}" +
+                Line($"• {a} → {b}: закрытые {model.LeftCounts[i]}, поступило новых {model.NewCounts[i]}" +
                      (repairs ? $", изменили состояние {model.ChangedCounts[i]}" : ""));
             }
-            Line($"• Всего снято с контроля: {model.LeftCounts.Sum()}; всего новых: {model.NewCounts.Sum()}" +
+            Line($"• Всего закрытых: {model.LeftCounts.Sum()}; всего новых: {model.NewCounts.Sum()}" +
                  (repairs ? $"; всего изменений состояния: {model.ChangedCounts.Sum()}" : ""));
             if (repairs && model.DateStats.Count > 0)
             {

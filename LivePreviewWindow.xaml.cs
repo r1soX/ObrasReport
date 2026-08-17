@@ -38,6 +38,7 @@ namespace ObrasReport
         private sealed class ChartViewItem
         {
             public string Title { get; set; }
+            public string Description { get; set; }
             public ImageSource Image { get; set; }
         }
 
@@ -311,6 +312,7 @@ namespace ObrasReport
             ChartsPreview.ItemsSource = visible.Select(c => new ChartViewItem
             {
                 Title = c.Title,
+                Description = c.Description,
                 Image = ToBitmap(c.Png)
             }).ToList();
         }
@@ -333,8 +335,10 @@ namespace ObrasReport
             sb.AppendLine(new string('=', 46));
             sb.AppendLine();
             sb.AppendLine($"Всего обращений: {_obrModel.Rows.Count}");
-            sb.AppendLine($"Обработано (итог): {_obrModel.ProcessedTotal}");
-            sb.AppendLine($"На контроле исполнения (итог): {_obrModel.OnControlTotal}");
+            if (_obrModel.Layout == LayoutType.Repairs)
+                sb.AppendLine($"Обработано — состояние изменилось: {_obrModel.ProcessedTotal}");
+            sb.AppendLine($"Закрыто — нет в последней выгрузке: {_obrModel.ClosedTotal}");
+            sb.AppendLine($"На контроле исполнения — есть в последней выгрузке: {_obrModel.OnControlTotal}");
             if (_obrModel.Layout == LayoutType.Repairs)
                 sb.AppendLine($"  из них во внешних состояниях: {_obrModel.OnControlExternal}");
             sb.AppendLine();
@@ -342,10 +346,10 @@ namespace ObrasReport
             for (int i = 0; i < _obrModel.Snapshots.Count - 1; i++)
             {
                 string a = _obrModel.Snapshots[i].Label, b = _obrModel.Snapshots[i + 1].Label;
-                sb.AppendLine($"  {a} → {b}: снято {_obrModel.LeftCounts[i]}, новых {_obrModel.NewCounts[i]}" +
+                sb.AppendLine($"  {a} → {b}: закрытые {_obrModel.LeftCounts[i]}, новых {_obrModel.NewCounts[i]}" +
                     (_obrModel.Layout == LayoutType.Repairs ? $", изменили состояние {_obrModel.ChangedCounts[i]}" : ""));
             }
-            sb.AppendLine($"  Всего снято: {_obrModel.LeftCounts.Sum()}; новых: {_obrModel.NewCounts.Sum()}" +
+            sb.AppendLine($"  Всего закрытых: {_obrModel.LeftCounts.Sum()}; новых: {_obrModel.NewCounts.Sum()}" +
                 (_obrModel.Layout == LayoutType.Repairs ? $"; изменений: {_obrModel.ChangedCounts.Sum()}" : ""));
             if (!string.IsNullOrWhiteSpace(_obrModel.Description))
             {
@@ -367,6 +371,12 @@ namespace ObrasReport
             sb.AppendLine($"  Удалено: {_univModel.Removed}");
             sb.AppendLine($"  Изменено: {_univModel.Changed}");
             sb.AppendLine($"  Без изменений: {_univModel.Same}");
+            sb.AppendLine();
+            sb.AppendLine("ЧТО ОЗНАЧАЮТ ИТОГИ:");
+            sb.AppendLine("  Добавлено — строка появилась после первой выгрузки и есть в последней.");
+            sb.AppendLine("  Удалено — строки нет в последней выгрузке.");
+            sb.AppendLine("  Изменено — изменилось значение отслеживаемого или выбранного столбца.");
+            sb.AppendLine("  Без изменений — строка есть в первой и последней выгрузках без изменений.");
             sb.AppendLine();
             sb.AppendLine($"Ключевой столбец: {_univModel.KeyHeader}");
             if (!string.IsNullOrEmpty(_univModel.TrackedHeader))
@@ -391,6 +401,8 @@ namespace ObrasReport
                 sb.AppendLine($"{_trendModel.DateLabels[i]}: решено обращений {_trendModel.TotalObrClosed[i]}, " +
                               $"решено нарядов {_trendModel.TotalNarClosed[i]}");
             sb.AppendLine();
+            sb.AppendLine("Закрытые обращения и наряды — значения счётчиков «(ЗАКРЫТО)» из исходных выгрузок.");
+            sb.AppendLine();
             sb.AppendLine($"Тренд обращений (последний − первый): {FormatDelta(_trendModel.TotalObrDelta)}");
             sb.AppendLine($"Тренд нарядов (последний − первый): {FormatDelta(_trendModel.TotalNarDelta)}");
             sb.AppendLine($"Ответственных в отчёте: {_trendModel.Rows.Count}");
@@ -409,8 +421,11 @@ namespace ObrasReport
             switch (_kind)
             {
                 case PreviewKind.Obrasheniya:
-                    detail = $"Обращений: {_obrModel.Rows.Count} · Обработано: {_obrModel.ProcessedTotal} · " +
-                             $"На контроле: {_obrModel.OnControlTotal}";
+                    detail = _obrModel.Layout == LayoutType.Repairs
+                        ? $"Обращений: {_obrModel.Rows.Count} · Обработано: {_obrModel.ProcessedTotal} · " +
+                          $"Закрыто: {_obrModel.ClosedTotal} · На контроле: {_obrModel.OnControlTotal}"
+                        : $"Обращений: {_obrModel.Rows.Count} · Закрыто: {_obrModel.ClosedTotal} · " +
+                          $"На контроле: {_obrModel.OnControlTotal}";
                     break;
                 case PreviewKind.Universal:
                     detail = $"Строк: {_univModel.Rows.Count} · Добавлено: {_univModel.Added} · " +

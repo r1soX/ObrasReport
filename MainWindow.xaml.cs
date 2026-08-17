@@ -548,8 +548,10 @@ namespace ObrasReport
             foreach (var c in created)
             {
                 var m = c.Item3;
-                sb.AppendLine($"• {c.Item1}: обращений {m.Rows.Count}, обработано {m.ProcessedTotal}, " +
-                              $"на контроле {m.OnControlTotal} — {Path.GetFileName(c.Item2)}");
+                string totals = m.Layout == LayoutType.Repairs
+                    ? $"обработано {m.ProcessedTotal}, закрыто {m.ClosedTotal}, на контроле {m.OnControlTotal}"
+                    : $"закрыто {m.ClosedTotal}, на контроле {m.OnControlTotal}";
+                sb.AppendLine($"• {c.Item1}: обращений {m.Rows.Count}, {totals} — {Path.GetFileName(c.Item2)}");
             }
             foreach (var g in tooFew)
                 sb.AppendLine($"⚠ Пропущено «{g.Key}» — только {g.Count()} файл(ов), нужно ≥2.");

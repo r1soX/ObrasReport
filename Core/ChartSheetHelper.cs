@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using ClosedXML.Excel;
 
@@ -35,7 +36,6 @@ namespace ObrasReport.Core
             }
 
             int anchorRow = 4;
-            const int chartHeightRows = 28;
             int picIndex = 0;
             foreach (var chart in charts)
             {
@@ -45,15 +45,38 @@ namespace ObrasReport.Core
                 ws.Cell(anchorRow, 1).Style.Font.FontSize = 11;
                 ws.Cell(anchorRow, 1).Style.Font.FontColor = t.TitleColorXL;
 
-                using (var ms = new MemoryStream(chart.Png))
+                int pictureRow = anchorRow + 1;
+                if (!string.IsNullOrWhiteSpace(chart.Description))
                 {
-                    var pic = ws.AddPicture(ms)
-                        .MoveTo(ws.Cell(anchorRow + 1, 1))
-                        .WithSize(900, 480);
-                    pic.Name = picPrefix + picIndex;
+                    var descriptionCell = ws.Cell(anchorRow + 1, 1);
+                    descriptionCell.Value = chart.Description;
+                    descriptionCell.Style.Font.FontSize = 9;
+                    descriptionCell.Style.Font.FontColor = t.SubtitleXL;
+                    descriptionCell.Style.Alignment.WrapText = true;
+                    ws.Row(anchorRow + 1).Height = 42;
+                    pictureRow = anchorRow + 2;
                 }
 
-                anchorRow += chartHeightRows;
+                using (var ms = new MemoryStream(chart.Png))
+                {
+                    int pictureWidth = 900;
+                    int pictureHeight;
+                    using (var source = Image.FromStream(ms, false, false))
+                    {
+                        pictureHeight = Math.Max(480,
+                            (int)Math.Round(pictureWidth * source.Height / (double)source.Width));
+                    }
+                    ms.Position = 0;
+                    var pic = ws.AddPicture(ms)
+                        .MoveTo(ws.Cell(pictureRow, 1))
+                        .WithSize(pictureWidth, pictureHeight);
+                    pic.Name = picPrefix + picIndex;
+
+                    // Около 17 пикселей на стандартную строку Excel. Высота зависит
+                    // от числа ответственных в полных рейтингах.
+                    anchorRow += Math.Max(28,
+                        pictureRow - anchorRow + (int)Math.Ceiling(pictureHeight / 17.0) + 2);
+                }
                 picIndex++;
             }
 

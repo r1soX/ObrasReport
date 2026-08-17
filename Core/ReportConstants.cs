@@ -10,6 +10,7 @@ namespace ObrasReport.Core
     {
         // ---- итоги классификации ----
         public const string ItogDone = "Обработано";
+        public const string ItogClosed = "Закрыто";
         public const string ItogControl = "На контроле исполнения";
 
         // ---- категории отчёта ----
