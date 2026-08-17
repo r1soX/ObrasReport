@@ -22,12 +22,13 @@ namespace ObrasReport.Core
                     : model.CategoryLabel;
                 string periods = "Категория: " + cat + ". Периоды: " +
                                  string.Join(", ", model.Snapshots.Select(s => s.Label));
-                ChartSheetHelper.Write(wb,
-                    "Графики и диаграммы — " + cat,
-                    periods,
-                    charts,
-                    "ObrChart_",
-                    t);
+                if (charts != null && charts.Count > 0)
+                    ChartSheetHelper.Write(wb,
+                        "Графики и диаграммы — " + cat,
+                        periods,
+                        charts,
+                        "ObrChart_",
+                        t);
                 wb.SaveAs(outputPath);
             }
         }
@@ -247,6 +248,10 @@ namespace ObrasReport.Core
                 var crit = model.DateStats.Select(d => (d.Black + d.Red).ToString());
                 Line($"• Критичные (Чёрная+Красная): {string.Join(" → ", crit)}");
             }
+
+            Line("");
+            Head("Сравнение с предыдущим периодом:");
+            Line(ReportChartRenderer.BuildPeriodComparisonText(model));
 
             if (!string.IsNullOrWhiteSpace(model.Description))
             {

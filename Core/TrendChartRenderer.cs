@@ -7,6 +7,13 @@ using ScottPlot;
 
 namespace ObrasReport.Core
 {
+    public enum TrendRankingMetric
+    {
+        ClosedAppeals,
+        ClosedWorkOrders,
+        TotalClosed,
+    }
+
     /// <summary>Картинка графика для предпросмотра и вставки в Excel.</summary>
     public class ChartImage
     {
@@ -21,7 +28,8 @@ namespace ObrasReport.Core
         private const int Width = 980;
         private const int Height = 520;
 
-        public static List<ChartImage> RenderAll(TrendReportModel model, ReportTheme theme = null)
+        public static List<ChartImage> RenderAll(TrendReportModel model, ReportTheme theme = null,
+            int? rankingLimit = 10, IEnumerable<TrendRankingMetric> rankingMetrics = null)
         {
             var t = theme ?? ReportTheme.Get("Синяя");
             var list = new List<ChartImage>();
@@ -31,7 +39,19 @@ namespace ObrasReport.Core
             TryAdd(list, () => LineTotals(model, obr: true, t));
             TryAdd(list, () => LineTotals(model, obr: false, t));
             TryAdd(list, () => GroupedTotals(model, t));
-            TryAdd(list, () => TopResponsibles(model, t));
+            TryAdd(list, () => PeriodComparison(model, t));
+            var metrics = (rankingMetrics ?? new[]
+                {
+                    TrendRankingMetric.ClosedAppeals,
+                    TrendRankingMetric.ClosedWorkOrders,
+                })
+                .Distinct()
+                .ToList();
+            foreach (var metric in metrics)
+            {
+                var selectedMetric = metric;
+                TryAdd(list, () => ResponsibleRanking(model, t, selectedMetric, rankingLimit));
+            }
             TryAdd(list, () => PieShareResponsibles(model, t));
             TryAdd(list, () => PieObrVsNar(model, t));
             return list;
@@ -110,24 +130,111 @@ namespace ObrasReport.Core
             return ToImage(title, plt);
         }
 
-        private static ChartImage TopResponsibles(TrendReportModel model, ReportTheme t)
+        private static ChartImage PeriodComparison(TrendReportModel model, ReportTheme t)
         {
-            const string title = "Топ‑10 ответственных (закрытые обращения)";
+            const string title = "Последний период и предыдущий";
+            int last = model.DateLabels.Count - 1;
+            if (last < 1)
+                return ToImage(title, NewPlot(title + " — нет данных", t));
+
+            int previous = last - 1;
+            string[] metricLabels = { "Закрытые обращения", "Закрытые наряды" };
+            string[] seriesLabels = { model.DateLabels[previous], model.DateLabels[last] };
+            double[][] series =
+            {
+                new[] { (double)model.TotalObrClosed[previous], model.TotalNarClosed[previous] },
+                new[] { (double)model.TotalObrClosed[last], model.TotalNarClosed[last] },
+            };
+            double yMax = Math.Max(series.SelectMany(x => x).DefaultIfEmpty(0).Max(), 1);
+
+            var plt = NewPlot(title, t);
+            var bars = plt.AddBarGroups(metricLabels, seriesLabels, series, null);
+            if (bars != null)
+            {
+                var colors = new[] { ColorTranslator.FromHtml(t.Accent), ColorTranslator.FromHtml(t.Brand) };
+                for (int i = 0; i < bars.Length; i++)
+                {
+                    bars[i].FillColor = colors[Math.Min(i, colors.Length - 1)];
+                    bars[i].BorderColor = Color.Transparent;
+                    bars[i].ShowValuesAboveBars = true;
+                    bars[i].Font.Size = 10;
+                }
+            }
+            plt.Legend(location: Alignment.UpperLeft);
+            plt.YLabel("Закрыто");
+            plt.SetAxisLimits(yMin: 0, yMax: yMax * 1.38);
+            ApplyCartesianLayout(plt, bottom: 70, top: 75);
+            return ToImage(title, plt, BuildPeriodComparisonText(model));
+        }
+
+        public static string BuildPeriodComparisonText(TrendReportModel model)
+        {
+            if (model?.DateLabels == null || model.DateLabels.Count < 2)
+                return "Для сравнения нужны минимум два периода.";
+            int last = model.DateLabels.Count - 1;
+            int previous = last - 1;
+            int obrCurrent = model.TotalObrClosed[last];
+            int obrPrevious = model.TotalObrClosed[previous];
+            int narCurrent = model.TotalNarClosed[last];
+            int narPrevious = model.TotalNarClosed[previous];
+            return $"Период {model.DateLabels[last]} относительно {model.DateLabels[previous]}: " +
+                $"закрытые обращения {obrCurrent} ({DeltaWithPercent(obrCurrent, obrPrevious)}); " +
+                $"закрытые наряды {narCurrent} ({DeltaWithPercent(narCurrent, narPrevious)}).";
+        }
+
+        private static ChartImage ResponsibleRanking(TrendReportModel model, ReportTheme t,
+            TrendRankingMetric metric, int? limit)
+        {
             int last = model.DateLabels.Count - 1;
             string lastLabel = model.DateLabels[last];
+            Func<TrendRow, int> current;
+            Func<TrendRow, int> delta;
+            string subject;
+            string axis;
+            Color fill;
+
+            switch (metric)
+            {
+                case TrendRankingMetric.ClosedWorkOrders:
+                    current = r => r.NarClosed.Count > last ? r.NarClosed[last] : 0;
+                    delta = r => r.NarDelta;
+                    subject = "закрытые наряды";
+                    axis = "Закрыто нарядов";
+                    fill = ColorTranslator.FromHtml(t.GreenBright);
+                    break;
+                case TrendRankingMetric.TotalClosed:
+                    current = r => (r.ObrClosed.Count > last ? r.ObrClosed[last] : 0) +
+                                   (r.NarClosed.Count > last ? r.NarClosed[last] : 0);
+                    delta = r => r.ObrDelta + r.NarDelta;
+                    subject = "всего закрыто";
+                    axis = "Закрыто обращений и нарядов";
+                    fill = ColorTranslator.FromHtml(t.Brand);
+                    break;
+                default:
+                    current = r => r.ObrClosed.Count > last ? r.ObrClosed[last] : 0;
+                    delta = r => r.ObrDelta;
+                    subject = "закрытые обращения";
+                    axis = "Закрыто обращений";
+                    fill = ColorTranslator.FromHtml(t.Accent);
+                    break;
+            }
+
+            string prefix = limit.HasValue ? $"Топ‑{limit.Value}" : "Рейтинг всех ответственных";
+            string title = prefix + " — " + subject;
 
             var top = model.Rows
                 .Select(r => new
                 {
                     Name = Truncate(r.Responsible, 24),
-                    Closed = r.ObrClosed.Count > last ? r.ObrClosed[last] : 0,
-                    Delta = r.ObrDelta
+                    Closed = current(r),
+                    Delta = delta(r)
                 })
+                .Where(x => x.Closed > 0)
                 .OrderByDescending(x => x.Closed)
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .Take(10)
-                .Reverse()
                 .ToList();
+            if (limit.HasValue) top = top.Take(limit.Value).ToList();
+            top.Reverse();
 
             if (top.Count == 0)
                 return ToImage(title, NewPlot(title + " — нет данных", t));
@@ -138,13 +245,16 @@ namespace ObrasReport.Core
             double xMax = Math.Max(values.DefaultIfEmpty(0).Max(), 1);
 
             var brand = ColorTranslator.FromHtml(t.Brand);
-            var accent = ColorTranslator.FromHtml(t.Accent);
-            var plt = NewPlot(title, t);
-            plt.XLabel("Период: " + lastLabel + "   ·   Закрыто обращений");
+            int height = Math.Max(Height, 175 + top.Count * 34);
+            var plt = new Plot(Width, height);
+            plt.Title(title, size: 15, color: brand, bold: true);
+            plt.Style(figureBackground: Color.White, dataBackground: Color.FromArgb(247, 250, 252));
+            plt.Grid(color: Color.FromArgb(220, 227, 234));
+            plt.XLabel("Период: " + lastLabel + "   ·   " + axis);
 
             var bar = plt.AddBar(values, positions);
             bar.Orientation = Orientation.Horizontal;
-            bar.FillColor = accent;
+            bar.FillColor = fill;
             bar.BorderColor = brand;
             bar.ShowValuesAboveBars = false;
 
@@ -161,7 +271,8 @@ namespace ObrasReport.Core
             ApplyCartesianLayout(plt, left: 220, right: 40, bottom: 55, top: 55);
             plt.YAxis.TickLabelStyle(rotation: 0);
 
-            return ToImage(title, plt);
+            return ToImage(title, plt,
+                "Значение у столбца — результат последнего периода; в скобках — изменение между первым и последним загруженными периодами.");
         }
 
         private static ChartImage PieShareResponsibles(TrendReportModel model, ReportTheme t)
@@ -259,6 +370,17 @@ namespace ObrasReport.Core
 
         private static string Pct(double part, double total) =>
             total <= 0 ? "0%" : (part / total * 100).ToString("0") + "%";
+
+        private static string DeltaWithPercent(int current, int previous)
+        {
+            int delta = current - previous;
+            string signed = delta > 0 ? "+" + delta : delta.ToString();
+            if (previous == 0)
+                return signed + ", процент не рассчитывается: в предыдущем периоде 0";
+            double percent = delta * 100.0 / previous;
+            string signedPercent = percent > 0 ? "+" + percent.ToString("0.0") : percent.ToString("0.0");
+            return signed + ", " + signedPercent + "%";
+        }
 
         private static Plot NewPlot(string title, ReportTheme t)
         {

@@ -491,7 +491,7 @@ namespace ObrasReport
                     if (dlg.ShowDialog() != true) return;
 
                     var finalTheme = ReportTheme.Get(preview.SelectedTheme);
-                    ExcelReportWriter.Write(model, dlg.FileName, preview.ChartsEnabled ? charts : null, finalTheme);
+                    ExcelReportWriter.Write(model, dlg.FileName, preview.SelectedCharts, finalTheme);
                     created.Add(Tuple.Create(g.Key, dlg.FileName, model));
                 }
                 catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
@@ -535,7 +535,7 @@ namespace ObrasReport
 
                         string path = Path.Combine(targetDir, SuggestName(model));
                         var finalTheme = ReportTheme.Get(preview.SelectedTheme);
-                        ExcelReportWriter.Write(model, path, preview.ChartsEnabled ? charts : null, finalTheme);
+                        ExcelReportWriter.Write(model, path, preview.SelectedCharts, finalTheme);
                         created.Add(Tuple.Create(g.Key, path, model));
                     }
                     catch (Exception ex) { errors.Add($"{g.Key}: {ex.Message}"); }
@@ -747,7 +747,7 @@ namespace ObrasReport
                 };
                 if (dlg.ShowDialog() != true) return;
 
-                ClosedTrendWriter.Write(model, dlg.FileName, preview.ChartsEnabled ? charts : null,
+                ClosedTrendWriter.Write(model, dlg.FileName, preview.SelectedCharts,
                     ReportTheme.Get(preview.SelectedTheme));
 
                 Log.Text = $"Отчёт динамики сформирован: {dlg.FileName}\n" +

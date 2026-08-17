@@ -1,12 +1,23 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using ObrasReport.Models;
 using ScottPlot;
 
 namespace ObrasReport.Core
 {
+    public enum ResponsibleRankingMetric
+    {
+        OnControl,
+        Closed,
+        New,
+        NoMovement,
+        AverageStateDays,
+    }
+
     /// <summary>
     /// Графики и диаграммы для отчёта по обращениям (по ремонту / видеонаблюдение / не по ремонту).
     /// Каждый набор строится отдельно для своей категории (ReportModel.CategoryLabel).
@@ -16,7 +27,8 @@ namespace ObrasReport.Core
         private const int Width = 980;
         private const int Height = 520;
 
-        public static List<ChartImage> RenderAll(ReportModel model, ReportTheme theme = null)
+        public static List<ChartImage> RenderAll(ReportModel model, ReportTheme theme = null,
+            int? rankingLimit = 10, IEnumerable<ResponsibleRankingMetric> rankingMetrics = null)
         {
             var t = theme ?? ReportTheme.Get("Синяя");
             var list = new List<ChartImage>();
@@ -27,13 +39,23 @@ namespace ObrasReport.Core
             if (model.Layout == LayoutType.Repairs)
                 TryAdd(list, () => SeverityByDate(model, t));
             TryAdd(list, () => DynamicsBars(model, t));
+            TryAdd(list, () => PeriodComparison(model, t));
             TryAdd(list, () => PieItog(model, t));
             if (model.Layout == LayoutType.Repairs)
                 TryAdd(list, () => PieSeverityLast(model, t));
-            TryAdd(list, () => TopOnControl(model, t));
-            TryAdd(list, () => TopClosed(model, t));
-            TryAdd(list, () => AllOnControl(model, t));
-            TryAdd(list, () => AllClosed(model, t));
+
+            var metrics = (rankingMetrics ?? new[]
+                {
+                    ResponsibleRankingMetric.OnControl,
+                    ResponsibleRankingMetric.Closed,
+                })
+                .Distinct()
+                .ToList();
+            foreach (var metric in metrics)
+            {
+                var selectedMetric = metric;
+                TryAdd(list, () => ResponsibleRanking(model, t, selectedMetric, rankingLimit));
+            }
             return list;
         }
 
@@ -157,6 +179,92 @@ namespace ObrasReport.Core
             return ToImage(title, plt);
         }
 
+        private static ChartImage PeriodComparison(ReportModel model, ReportTheme t)
+        {
+            string title = T(model, "Последний период и предыдущий");
+            if (model.Transitions == null || model.Transitions.Count == 0)
+                return ToImage(title, NewPlot(title + " — нет данных", t));
+
+            var current = model.Transitions.Last();
+            var previous = model.Transitions.Count > 1
+                ? model.Transitions[model.Transitions.Count - 2]
+                : null;
+
+            var metricLabels = model.Layout == LayoutType.Repairs
+                ? new[] { "Закрыто", "Обработано", "На контроле", "Новые" }
+                : new[] { "Закрыто", "На контроле", "Новые" };
+
+            Func<TransitionStat, double[]> values = s => model.Layout == LayoutType.Repairs
+                ? new[] { (double)s.Closed, s.Processed, s.OnControl, s.New }
+                : new[] { (double)s.Closed, s.OnControl, s.New };
+
+            string currentLabel = current.FromLabel + "→" + current.ToLabel;
+            string[] seriesLabels;
+            double[][] series;
+            if (previous != null)
+            {
+                seriesLabels = new[] { previous.FromLabel + "→" + previous.ToLabel, currentLabel };
+                series = new[] { values(previous), values(current) };
+            }
+            else
+            {
+                seriesLabels = new[] { currentLabel };
+                series = new[] { values(current) };
+            }
+
+            double yMax = Math.Max(series.SelectMany(x => x).DefaultIfEmpty(0).Max(), 1);
+            var plt = NewPlot(title, t);
+            var bars = plt.AddBarGroups(metricLabels, seriesLabels, series, null);
+            if (bars != null)
+            {
+                var colors = previous != null
+                    ? new[] { ColorTranslator.FromHtml(t.Accent), ColorTranslator.FromHtml(t.Brand) }
+                    : new[] { ColorTranslator.FromHtml(t.Brand) };
+                for (int i = 0; i < bars.Length; i++)
+                {
+                    bars[i].FillColor = colors[Math.Min(i, colors.Length - 1)];
+                    bars[i].BorderColor = Color.Transparent;
+                    bars[i].ShowValuesAboveBars = true;
+                    bars[i].Font.Size = 9;
+                }
+            }
+            plt.Legend(location: Alignment.UpperLeft);
+            plt.YLabel("Обращений");
+            plt.SetAxisLimits(yMin: 0, yMax: yMax * 1.38);
+            ApplyCartesian(plt, bottom: 70, top: 75);
+            return ToImage(title, plt, BuildPeriodComparisonText(model));
+        }
+
+        public static string BuildPeriodComparisonText(ReportModel model)
+        {
+            if (model?.Transitions == null || model.Transitions.Count == 0)
+                return "Нет переходов между выгрузками для сравнения.";
+
+            var current = model.Transitions.Last();
+            var previous = model.Transitions.Count > 1
+                ? model.Transitions[model.Transitions.Count - 2]
+                : null;
+            string prefix = $"Последний период {current.FromLabel}→{current.ToLabel}: ";
+            if (previous == null)
+            {
+                string only = $"закрыто {current.Closed}; на контроле {current.OnControl}; новых {current.New}";
+                if (model.Layout == LayoutType.Repairs) only += $"; обработано {current.Processed}";
+                return prefix + only + $"; доля закрытия {current.ClosureRate:0.0}%. " +
+                    "Для сравнения с предыдущим периодом нужны минимум три выгрузки.";
+            }
+
+            string text = prefix +
+                $"закрыто {current.Closed} ({Signed(current.Closed - previous.Closed)}); " +
+                $"на контроле {current.OnControl} ({Signed(current.OnControl - previous.OnControl)}); " +
+                $"новых {current.New} ({Signed(current.New - previous.New)})";
+            if (model.Layout == LayoutType.Repairs)
+                text += $"; обработано {current.Processed} ({Signed(current.Processed - previous.Processed)})";
+            double rateDelta = current.ClosureRate - previous.ClosureRate;
+            text += $"; доля закрытия {current.ClosureRate:0.0}% ({Signed(rateDelta, "0.0")} п.п.). " +
+                "Доля закрытия — закрытые обращения относительно количества обращений в начале периода.";
+            return text;
+        }
+
         private static ChartImage PieItog(ReportModel model, ReportTheme t)
         {
             string title = T(model, "Итог обращений");
@@ -264,43 +372,75 @@ namespace ObrasReport.Core
             return ToImage(title, plt, description);
         }
 
-        private static ChartImage TopOnControl(ReportModel model, ReportTheme t)
+        private sealed class RankingValue
         {
-            return ResponsibleRanking(model, t, r => !r.Processed,
-                "Топ‑10 ответственных (на контроле)", "Обращений на контроле", 10,
-                ColorTranslator.FromHtml(t.Accent));
-        }
-
-        private static ChartImage TopClosed(ReportModel model, ReportTheme t)
-        {
-            return ResponsibleRanking(model, t, r => r.Closed,
-                "Топ‑10 ответственных (закрытые обращения)", "Закрытых обращений", 10,
-                ColorTranslator.FromHtml(t.GreenBright));
-        }
-
-        private static ChartImage AllOnControl(ReportModel model, ReportTheme t)
-        {
-            return ResponsibleRanking(model, t, r => !r.Processed,
-                "Рейтинг всех ответственных (на контроле)", "Обращений на контроле", null,
-                ColorTranslator.FromHtml(t.Accent));
-        }
-
-        private static ChartImage AllClosed(ReportModel model, ReportTheme t)
-        {
-            return ResponsibleRanking(model, t, r => r.Closed,
-                "Рейтинг всех ответственных (закрытые обращения)", "Закрытых обращений", null,
-                ColorTranslator.FromHtml(t.GreenBright));
+            public string Name;
+            public double Value;
         }
 
         private static ChartImage ResponsibleRanking(ReportModel model, ReportTheme t,
-            Func<ReportRow, bool> filter, string name, string metric, int? limit, Color fill)
+            ResponsibleRankingMetric metric, int? limit)
         {
-            string title = T(model, name);
+            Func<ReportRow, bool> filter;
+            Func<IEnumerable<ReportRow>, double> aggregate;
+            string subject;
+            string axis;
+            string explanation;
+            string valueFormat = "0";
+            Color fill;
+
+            switch (metric)
+            {
+                case ResponsibleRankingMetric.Closed:
+                    filter = r => r.Closed;
+                    aggregate = rows => rows.Count();
+                    subject = "закрытые обращения";
+                    axis = "Закрытых обращений";
+                    explanation = "Обращения, которых нет в последней выгрузке.";
+                    fill = ColorTranslator.FromHtml(t.GreenBright);
+                    break;
+                case ResponsibleRankingMetric.New:
+                    filter = r => r.NewInLast;
+                    aggregate = rows => rows.Count();
+                    subject = "новые обращения";
+                    axis = "Новых обращений";
+                    explanation = "Обращения, появившиеся между двумя последними выгрузками.";
+                    fill = ColorTranslator.FromHtml(t.Brand);
+                    break;
+                case ResponsibleRankingMetric.NoMovement:
+                    filter = r => r.NoMovement;
+                    aggregate = rows => rows.Count();
+                    subject = "без движения";
+                    axis = "Обращений без изменения состояния";
+                    explanation = "Обращения, состояние которых не изменилось между двумя последними выгрузками.";
+                    fill = ColorTranslator.FromHtml(t.AmberBright);
+                    break;
+                case ResponsibleRankingMetric.AverageStateDays:
+                    filter = r => !r.Closed && ParseDays(r.Days).HasValue;
+                    aggregate = rows => rows.Select(r => ParseDays(r.Days).Value).Average();
+                    subject = "среднее время в состоянии";
+                    axis = "Среднее число дней в состоянии";
+                    explanation = "Среднее значение поля «Дней в состоянии» по обращениям последней выгрузки.";
+                    valueFormat = "0.0";
+                    fill = ColorTranslator.FromHtml(t.RedText);
+                    break;
+                default:
+                    filter = r => r.OnControlInLast;
+                    aggregate = rows => rows.Count();
+                    subject = "на контроле исполнения";
+                    axis = "Обращений на контроле";
+                    explanation = "Обращения, оставшиеся на контроле исполнения по итогам периода.";
+                    fill = ColorTranslator.FromHtml(t.Accent);
+                    break;
+            }
+
+            string prefix = limit.HasValue ? $"Топ‑{limit.Value}" : "Рейтинг всех ответственных";
+            string title = T(model, prefix + " — " + subject);
             var ranked = model.Rows
                 .Where(filter)
                 .GroupBy(r => string.IsNullOrWhiteSpace(r.Responsible) ? "—" : r.Responsible.Trim())
-                .Select(g => new { Name = Truncate(g.Key, 32), Count = g.Count() })
-                .OrderByDescending(x => x.Count)
+                .Select(g => new RankingValue { Name = Truncate(g.Key, 32), Value = aggregate(g) })
+                .OrderByDescending(x => x.Value)
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (limit.HasValue)
@@ -308,17 +448,17 @@ namespace ObrasReport.Core
             ranked.Reverse();
 
             if (ranked.Count == 0)
-                return ToImage(title, NewPlot(title + " — нет данных", t));
+                return ToImage(title, NewPlot(title + " — нет данных", t), explanation);
 
-            double[] values = ranked.Select(x => (double)x.Count).ToArray();
+            double[] values = ranked.Select(x => x.Value).ToArray();
             double[] positions = Enumerable.Range(0, ranked.Count).Select(i => (double)i).ToArray();
             string[] labels = ranked.Select(x => x.Name).ToArray();
             double xMax = Math.Max(values.DefaultIfEmpty(0).Max(), 1);
 
             var brand = ColorTranslator.FromHtml(t.Brand);
-            int height = limit.HasValue ? Height : Math.Max(Height, 175 + ranked.Count * 34);
+            int height = Math.Max(Height, 175 + ranked.Count * 34);
             var plt = NewPlot(title, t, height);
-            plt.XLabel("Категория: " + Cat(model) + "   ·   " + metric);
+            plt.XLabel("Категория: " + Cat(model) + "   ·   " + axis);
             var bar = plt.AddBar(values, positions);
             bar.Orientation = Orientation.Horizontal;
             bar.FillColor = fill;
@@ -326,17 +466,37 @@ namespace ObrasReport.Core
             bar.ShowValuesAboveBars = false;
             for (int i = 0; i < values.Length; i++)
             {
-                var txt = plt.AddText(values[i].ToString("0"), values[i] + xMax * 0.02, positions[i], size: 10, color: brand);
+                var txt = plt.AddText(values[i].ToString(valueFormat), values[i] + xMax * 0.02,
+                    positions[i], size: 10, color: brand);
                 txt.Alignment = Alignment.MiddleLeft;
             }
             plt.YTicks(positions, labels);
             plt.SetAxisLimits(xMin: 0, xMax: xMax * 1.28, yMin: -0.7, yMax: ranked.Count - 0.3);
             ApplyCartesian(plt, left: 270, right: 40, bottom: 55, top: 55);
-            return ToImage(title, plt);
+            string period = model.Snapshots.Count >= 2
+                ? $" Последний переход: {model.Snapshots[model.Snapshots.Count - 2].Label}→{model.Snapshots.Last().Label}."
+                : "";
+            return ToImage(title, plt, explanation + period);
+        }
+
+        private static double? ParseDays(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            var match = Regex.Match(value, @"\d+(?:[\.,]\d+)?");
+            if (!match.Success) return null;
+            string normalized = match.Value.Replace(',', '.');
+            return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out var days)
+                ? (double?)days
+                : null;
         }
 
         private static string Pct(double part, double total) =>
             total <= 0 ? "0%" : (part / total * 100).ToString("0") + "%";
+
+        private static string Signed(int value) => value > 0 ? "+" + value : value.ToString();
+
+        private static string Signed(double value, string format) =>
+            value > 0 ? "+" + value.ToString(format) : value.ToString(format);
 
         private static string ItogExplanation(ReportModel model, double total)
         {

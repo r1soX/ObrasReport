@@ -25,7 +25,7 @@ namespace ObrasReport
         private readonly ReportModel _obrModel;
         private readonly UniversalReportModel _univModel;
         private readonly TrendReportModel _trendModel;
-        private readonly List<ChartImage> _charts;
+        private List<ChartImage> _charts;
         private readonly string _subtitle;
         private readonly string _heading;
 
@@ -47,6 +47,12 @@ namespace ObrasReport
         public bool StatsEnabled => ShowStatsCb.IsChecked == true;
         public bool CommentsEnabled => ShowCommentsCb.IsChecked == true;
         public string SelectedTheme => (ThemeCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "Синяя";
+        public List<ChartImage> SelectedCharts => !ChartsEnabled
+            ? new List<ChartImage>()
+            : ChartTogglePanel.Children.OfType<CheckBox>()
+                .Where(cb => cb.IsChecked == true && cb.Tag is ChartToggleItem)
+                .Select(cb => ((ChartToggleItem)cb.Tag).Source)
+                .ToList();
 
         // ---------- конструкторы для каждого типа ----------
 
@@ -84,8 +90,21 @@ namespace ObrasReport
 
             // чекбокс «Комментарии» имеет смысл только для обращений
             if (_kind != PreviewKind.Obrasheniya)
-            {
                 ShowCommentsCb.Visibility = Visibility.Collapsed;
+
+            if (_kind == PreviewKind.Universal)
+                RankingOptionsPanel.Visibility = Visibility.Collapsed;
+            else if (_kind == PreviewKind.Trend)
+            {
+                RankingControlCb.Content = "Закрытые обращения";
+                RankingClosedCb.Content = "Закрытые наряды";
+                RankingNewCb.Content = "Всего закрыто";
+                RankingNoMovementCb.Visibility = Visibility.Collapsed;
+                RankingAverageDaysCb.Visibility = Visibility.Collapsed;
+            }
+            else if (_obrModel.Layout != LayoutType.Repairs)
+            {
+                RankingAverageDaysCb.Visibility = Visibility.Collapsed;
             }
 
             // чекбокс «Графики» — скрываем если графиков нет
@@ -302,12 +321,7 @@ namespace ObrasReport
         // ---------- графики ----------
         private void RenderCharts()
         {
-            var visible = _charts
-                .Where(c => ChartTogglePanel.Children
-                    .Cast<CheckBox>()
-                    .Where(cb => cb.Tag is ChartToggleItem t && t.Source == c)
-                    .Any(cb => cb.IsChecked == true))
-                .ToList();
+            var visible = SelectedCharts;
 
             ChartsPreview.ItemsSource = visible.Select(c => new ChartViewItem
             {
@@ -351,6 +365,9 @@ namespace ObrasReport
             }
             sb.AppendLine($"  Всего закрытых: {_obrModel.LeftCounts.Sum()}; новых: {_obrModel.NewCounts.Sum()}" +
                 (_obrModel.Layout == LayoutType.Repairs ? $"; изменений: {_obrModel.ChangedCounts.Sum()}" : ""));
+            sb.AppendLine();
+            sb.AppendLine("СРАВНЕНИЕ С ПРЕДЫДУЩИМ ПЕРИОДОМ:");
+            sb.AppendLine(ReportChartRenderer.BuildPeriodComparisonText(_obrModel));
             if (!string.IsNullOrWhiteSpace(_obrModel.Description))
             {
                 sb.AppendLine();
@@ -403,6 +420,9 @@ namespace ObrasReport
             sb.AppendLine();
             sb.AppendLine("Закрытые обращения и наряды — значения счётчиков «(ЗАКРЫТО)» из исходных выгрузок.");
             sb.AppendLine();
+            sb.AppendLine("СРАВНЕНИЕ С ПРЕДЫДУЩИМ ПЕРИОДОМ:");
+            sb.AppendLine(TrendChartRenderer.BuildPeriodComparisonText(_trendModel));
+            sb.AppendLine();
             sb.AppendLine($"Тренд обращений (последний − первый): {FormatDelta(_trendModel.TotalObrDelta)}");
             sb.AppendLine($"Тренд нарядов (последний − первый): {FormatDelta(_trendModel.TotalNarDelta)}");
             sb.AppendLine($"Ответственных в отчёте: {_trendModel.Rows.Count}");
@@ -445,7 +465,59 @@ namespace ObrasReport
         // ---------- тема ----------
         private void Theme_Changed(object sender, SelectionChangedEventArgs e)
         {
+            if (IsLoaded && _kind == PreviewKind.Obrasheniya)
+                RegenerateObrCharts();
+            else if (IsLoaded && _kind == PreviewKind.Trend)
+                RegenerateTrendCharts();
             ApplyTheme(SelectedTheme);
+        }
+
+        private void RankingOptions_Changed(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            if (_kind == PreviewKind.Obrasheniya) RegenerateObrCharts();
+            else if (_kind == PreviewKind.Trend) RegenerateTrendCharts();
+        }
+
+        private void RegenerateObrCharts()
+        {
+            var metrics = new List<ResponsibleRankingMetric>();
+            if (RankingControlCb.IsChecked == true) metrics.Add(ResponsibleRankingMetric.OnControl);
+            if (RankingClosedCb.IsChecked == true) metrics.Add(ResponsibleRankingMetric.Closed);
+            if (RankingNewCb.IsChecked == true) metrics.Add(ResponsibleRankingMetric.New);
+            if (RankingNoMovementCb.IsChecked == true) metrics.Add(ResponsibleRankingMetric.NoMovement);
+            if (_obrModel.Layout == LayoutType.Repairs && RankingAverageDaysCb.IsChecked == true)
+                metrics.Add(ResponsibleRankingMetric.AverageStateDays);
+
+            _charts = ReportChartRenderer.RenderAll(_obrModel, ReportTheme.Get(SelectedTheme),
+                SelectedRankingLimit(), metrics);
+            ShowChartsCb.Visibility = _charts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            BuildChartToggles();
+            RenderCharts();
+            UpdateInfo();
+        }
+
+        private void RegenerateTrendCharts()
+        {
+            var metrics = new List<TrendRankingMetric>();
+            if (RankingControlCb.IsChecked == true) metrics.Add(TrendRankingMetric.ClosedAppeals);
+            if (RankingClosedCb.IsChecked == true) metrics.Add(TrendRankingMetric.ClosedWorkOrders);
+            if (RankingNewCb.IsChecked == true) metrics.Add(TrendRankingMetric.TotalClosed);
+
+            _charts = TrendChartRenderer.RenderAll(_trendModel, ReportTheme.Get(SelectedTheme),
+                SelectedRankingLimit(), metrics);
+            ShowChartsCb.Visibility = _charts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            BuildChartToggles();
+            RenderCharts();
+            UpdateInfo();
+        }
+
+        private int? SelectedRankingLimit()
+        {
+            if (!(RankingLimitCombo.SelectedItem is ComboBoxItem item)) return 10;
+            string tag = item.Tag as string;
+            if (string.Equals(tag, "all", StringComparison.OrdinalIgnoreCase)) return null;
+            return int.TryParse(tag, out var parsed) ? parsed : 10;
         }
 
         private void ApplyTheme(string theme)

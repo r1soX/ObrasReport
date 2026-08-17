@@ -142,10 +142,13 @@ namespace ObrasReport.Models
         public string Days;
         public string Service;   // Услуга (видеонаблюдение)
         public List<string> StatusByDate = new List<string>(); // выровнено по порядку выгрузок
-        public string Itog;      // «Обработано» / «На контроле исполнения»
+        public string Itog;      // «Обработано» / «Закрыто» / «На контроле исполнения»
         public string Comment;
         public bool Processed;   // для подсветки
         public bool Closed;      // обращение отсутствует в последней выгрузке
+        public bool NewInLast;   // появилось в последнем переходе
+        public bool NoMovement;  // без изменения состояния в двух последних выгрузках
+        public bool OnControlInLast; // на контроле именно в последнем переходе
     }
 
     /// <summary>Статистика по одной дате.</summary>
@@ -154,6 +157,21 @@ namespace ObrasReport.Models
         public string Label;
         public int TotalUnique;
         public int Black, Red, Yellow;
+    }
+
+    /// <summary>Показатели перехода между двумя соседними выгрузками.</summary>
+    public class TransitionStat
+    {
+        public string FromLabel;
+        public string ToLabel;
+        public int StartTotal;
+        public int EndTotal;
+        public int Closed;
+        public int New;
+        public int Processed;
+        public int OnControl;
+
+        public double ClosureRate => StartTotal <= 0 ? 0 : Closed * 100.0 / StartTotal;
     }
 
     /// <summary>Готовая модель отчёта.</summary>
@@ -166,6 +184,7 @@ namespace ObrasReport.Models
         public List<Snapshot> Snapshots = new List<Snapshot>();
         public List<ReportRow> Rows = new List<ReportRow>();
         public List<DateStat> DateStats = new List<DateStat>();
+        public List<TransitionStat> Transitions = new List<TransitionStat>();
 
         // сводные показатели
         public int ProcessedTotal;

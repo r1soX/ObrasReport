@@ -39,6 +39,26 @@
                               Margin="0,0,0,8" Checked="Option_Changed" Unchecked="Option_Changed"/>
 
                     <TextBlock Text="Графики" FontWeight="Bold" Foreground="#1F4E78" FontSize="15" Margin="0,8,0,10"/>
+                    <StackPanel x:Name="RankingOptionsPanel" Margin="0,0,0,12">
+                        <TextBlock Text="Рейтинг ответственных:" Foreground="#444" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="RankingLimitCombo" Height="28" SelectedIndex="1" Margin="0,0,0,8"
+                                  SelectionChanged="RankingOptions_Changed">
+                            <ComboBoxItem Content="Топ‑5" Tag="5"/>
+                            <ComboBoxItem Content="Топ‑10" Tag="10"/>
+                            <ComboBoxItem Content="Топ‑20" Tag="20"/>
+                            <ComboBoxItem Content="Все ответственные" Tag="all"/>
+                        </ComboBox>
+                        <CheckBox x:Name="RankingControlCb" Content="На контроле исполнения" IsChecked="True"
+                                  Margin="0,0,0,5" Checked="RankingOptions_Changed" Unchecked="RankingOptions_Changed"/>
+                        <CheckBox x:Name="RankingClosedCb" Content="Закрытые" IsChecked="True"
+                                  Margin="0,0,0,5" Checked="RankingOptions_Changed" Unchecked="RankingOptions_Changed"/>
+                        <CheckBox x:Name="RankingNewCb" Content="Новые" IsChecked="False"
+                                  Margin="0,0,0,5" Checked="RankingOptions_Changed" Unchecked="RankingOptions_Changed"/>
+                        <CheckBox x:Name="RankingNoMovementCb" Content="Без движения" IsChecked="False"
+                                  Margin="0,0,0,5" Checked="RankingOptions_Changed" Unchecked="RankingOptions_Changed"/>
+                        <CheckBox x:Name="RankingAverageDaysCb" Content="Среднее дней в состоянии" IsChecked="False"
+                                  Checked="RankingOptions_Changed" Unchecked="RankingOptions_Changed"/>
+                    </StackPanel>
                     <StackPanel x:Name="ChartTogglePanel"/>
 
                     <Border Background="#F0F4F8" CornerRadius="4" Padding="10" Margin="0,16,0,0">

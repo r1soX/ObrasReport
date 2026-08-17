@@ -74,10 +74,27 @@ namespace ObrasReport.Core
             {
                 var a = snaps[i].Records;
                 var b = snaps[i + 1].Records;
-                model.LeftCounts.Add(a.Keys.Count(k => !b.ContainsKey(k)));
-                model.NewCounts.Add(b.Keys.Count(k => !a.ContainsKey(k)));
-                model.ChangedCounts.Add(a.Keys.Count(k => b.ContainsKey(k) &&
-                    !string.Equals(a[k].Status, b[k].Status, StringComparison.Ordinal)));
+                int closed = a.Keys.Count(k => !b.ContainsKey(k));
+                int added = b.Keys.Count(k => !a.ContainsKey(k));
+                int changed = a.Keys.Count(k => b.ContainsKey(k) &&
+                    !string.Equals(a[k].Status, b[k].Status, StringComparison.Ordinal));
+                int processed = layout == LayoutType.Repairs ? changed : 0;
+                int onControl = layout == LayoutType.Repairs ? b.Count - changed : b.Count;
+
+                model.LeftCounts.Add(closed);
+                model.NewCounts.Add(added);
+                model.ChangedCounts.Add(changed);
+                model.Transitions.Add(new TransitionStat
+                {
+                    FromLabel = snaps[i].Label,
+                    ToLabel = snaps[i + 1].Label,
+                    StartTotal = a.Count,
+                    EndTotal = b.Count,
+                    Closed = closed,
+                    New = added,
+                    Processed = processed,
+                    OnControl = onControl,
+                });
             }
 
             var allNumbers = new SortedSet<string>();
@@ -94,6 +111,7 @@ namespace ObrasReport.Core
 
                 bool inFirst = snaps[0].Records.ContainsKey(num);
                 bool inLast = snaps[snaps.Count - 1].Records.ContainsKey(num);
+                bool inPrevious = snaps[snaps.Count - 2].Records.ContainsKey(num);
 
                 var trajectory = presentIdx.Select(i => snaps[i].Records[num].Status).ToList();
                 bool statusChanged = trajectory.Distinct().Count() > 1;
@@ -112,6 +130,16 @@ namespace ObrasReport.Core
                     Days = inLast ? lastRec.Days : "",
                     Service = lastRec.Service,
                     Closed = !inLast,
+                    NewInLast = inLast && !inPrevious,
+                    NoMovement = inLast && inPrevious && string.Equals(
+                        snaps[snaps.Count - 2].Records[num].Status,
+                        snaps[snaps.Count - 1].Records[num].Status,
+                        StringComparison.Ordinal),
+                    OnControlInLast = inLast && (layout != LayoutType.Repairs || !inPrevious ||
+                        string.Equals(
+                            snaps[snaps.Count - 2].Records[num].Status,
+                            snaps[snaps.Count - 1].Records[num].Status,
+                            StringComparison.Ordinal)),
                     StatusByDate = snaps.Select(s => s.Records.TryGetValue(num, out var r) ? r.Status : "—нет—").ToList(),
                 };
 
